@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+    <metadata>
+        <id>Dapper.Data</id>
+        <version>1.11</version>
+        <title>Dapper.Data</title>
+        <authors>Maxim Konstantinovski</authors>
+        <owners>Maxim Konstantinovski</owners>
+        <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
+        <projectUrl>https://github.com/mkonstan/dapper-dot-net</projectUrl>
+        <requireLicenseAcceptance>false</requireLicenseAcceptance>
+        <description>Trivial micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability.
+***************************************
+// To create an instance of database context inherit DbContext
+class TestDb : DbContext
+{
+	private const string ConnectionName = "DefaultConnection";
+
+	private TestDb()
+		: base(ConnectionName)
+	{ }
+}
+
+// execute multiple statatements using same connection
+// connection and transaction (if needed)
+var db = new TestDb();
+db.Batch(s =&gt;
+{
+	s.BeginTransaction();
+	try
+	{
+		s.Execute([Your query]);
+		s.CommitTransaction();
+	}
+	catch
+	{
+		s.RollbackTransaction();
+		throw;
+	}
+});
+
+// using it with ninject
+kernel.Bind&lt;IDbContext&gt;().To&lt;TestDb&gt;().InSingletonScope();</description>
+        <summary>Trivial micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability.</summary>
+        <releaseNotes>* 1.11
+* Using new version of Dapper
+* added commandTimeout to api
+* added CommandDefinition to api
+* added QueryMultiple
+* Query&lt;T&gt; will check if T is IDictionary&lt;string, object&gt; and will return data as IDictionary&lt;string, object&gt;
+* 1.7
+* Enable overriding service using RegisterService
+* 1.6
+* Refactored common common commands in to IDbCommand interface
+* Added multi mapping query support
+* 1.4
+* DbServiceProvider now implements IServiceProvider
+* For is obsolete use GetService to retreave services
+* Included T4 template to use on dataset to create services. T4 name must match dataset name. Also when adding dataset clear its custom tool property. The dataset is used only as GUI designer for your POCO(s) and services. The T4 will create one interface per table and a one interface that implement's IDbService and one base class that inherit's DbService eposing all queries defined in dataset as methods.
+* 1.0
+* Streamlined connection and transaction management
+* Batch query processing
+* Can use ninject
+* Thread safe
+* Connection can be defined in .config file</releaseNotes>
+        <copyright>Copyright Maxim Konstantinovski 2012</copyright>
+        <tags>orm sql micro-orm ninject mvc</tags>
+        <dependencies>
+            <dependency id="Dapper" version="1.27" />
+        </dependencies>
+    </metadata>
+	<files>
+		<file src="lib\" target="lib" />
+		<file src="t4\" target="t4" />
+	</files>
+</package>

@@ -1,0 +1,554 @@
+﻿<#@ template debug="true" hostSpecific="true" language="C#" visibility="internal"#>
+<#@ output extension=".cs" #>
+<#@ assembly name="System.Xml" #>
+<#@ assembly name="EnvDTE" #>
+<#@ assembly name="Microsoft.VisualStudio.OLE.Interop" #>
+<#@ assembly name="Microsoft.VisualStudio.Shell" #>
+<#@ assembly name="Microsoft.VisualStudio.Shell.Interop" #>
+<#@ assembly name="Microsoft.VisualStudio.Shell.Interop.8.0" #>
+<#@ include file="EF.Utility.CS.ttinclude"#>
+<#@ import namespace="System" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Diagnostics" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Collections" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Data" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Xml" #>
+<#@ import namespace="System.Xml.Linq" #>
+<#@ import namespace="Microsoft.VisualStudio.Shell" #>
+<#@ import namespace="Microsoft.VisualStudio.Shell.Interop" #>
+<#@ import namespace="Microsoft.VisualStudio.TextTemplating" #>
+<#
+	// insert your template code here the tempalte code will be syntaxhighlighted 
+	// and you will have intellisense for all namespaces in the full edition
+	var code = new CodeGenerationTools(this);
+	var namespaceName = code.VsNamespaceSuggestion();
+	var searchDir = Path.GetDirectoryName(Host.TemplateFile);
+	foreach(var schemaFile in Directory.GetFiles(searchDir,  "*.xsd", SearchOption.AllDirectories))
+	{
+		var services = GetServicesFromDataSet(schemaFile);
+		CreateDataContractsAndEntities(namespaceName, schemaFile, services);
+		CreateServiceContracts(namespaceName, services);
+	}
+#>
+<#+
+	void CreateDataContractsAndEntities(string namespaceName, string schemaFile, IEnumerable<Service> services)
+	{
+		var serviceMap = services.ToDictionary(s=>s.Name, StringComparer.CurrentCultureIgnoreCase);
+		Service service;
+		using(DataSet ds = new System.Data.DataSet())
+		{
+			ds.ReadXmlSchema(schemaFile);
+			foreach (DataTable table in ds.Tables)
+			{
+				//table.
+				var isPublic = serviceMap.TryGetValue(table.TableName, out service) && service.Public;
+				WriteLine("using System;");
+				WriteLine("using System.Collections.Generic;");
+				WriteLine("using System.ComponentModel;");
+				WriteLine("");
+				WriteLine("namespace {0}.Contracts", namespaceName);
+				WriteLine("{");
+				WriteLine("\t//{0} Data Contract", table.TableName);
+				CreateDataContract(table, isPublic);
+				WriteLine("}");
+				SaveOutput("I" + table.TableName + ".cs");
+
+				WriteLine("using System;");
+				WriteLine("using System.Collections.Generic;");
+				WriteLine("using System.ComponentModel;");
+				WriteLine("using {0}.Contracts;", namespaceName);
+				WriteLine("");
+				WriteLine("namespace {0}.Entities", namespaceName);
+				WriteLine("{");
+				WriteLine("\t//{0} Entity", table.TableName);
+				CreateEntity(table);
+				WriteLine("}");
+				SaveOutput(table.TableName + ".cs");
+			}
+				
+		}
+	}
+
+	void CreateServiceContracts(string namespaceName, IEnumerable<Service> services)
+	{
+		try 
+		{
+			foreach(var service in services)
+			{
+				CreatServiceFile(namespaceName, service);
+			}
+		}
+		catch (Exception ex)
+		{
+			Write(ex.ToString());
+		}
+	}
+
+	void CreatServiceFile(string namespaceName, Service service)
+	{
+		WriteLine("using System;");
+		WriteLine("using System.ComponentModel;");
+		WriteLine("using System.Data;");
+		WriteLine("using System.Data.Common;");
+		WriteLine("using System.Collections.Generic;");
+		WriteLine("using Dapper;");
+		WriteLine("using Dapper.Data;");
+		WriteLine("using Dapper.Data.Service;");
+		WriteLine("using {0}.Contracts;", namespaceName);
+		WriteLine("namespace {0}.Services", namespaceName);
+		WriteLine("{");
+		CreateServiceContract(namespaceName, service);
+		WriteLine("");
+		CreateServiceImplementation(namespaceName, service);
+		WriteLine("}");
+		SaveOutput(service.Name + "Service.cs");
+	}
+
+	void CreateServiceContract(string namespaceName, Service service)
+	{
+		WriteLine("\t//{0} Contract", service.Name);
+		Write("\t");
+		if(service.Public)
+		{ Write("public "); }
+		WriteLine("partial interface I{0}Service : Dapper.Data.Service.IDbService", service.Name);
+
+		WriteLine("\t{");
+		foreach(Action action in service.Actions)
+		{
+			if(!action.Modifier.Equals("public", StringComparison.CurrentCultureIgnoreCase))
+			{ continue; }
+			CreateServiceMethod(action);
+		}
+		WriteLine("\t}");
+	}
+
+	void CreateServiceImplementation(string namespaceName, Service service)
+	{
+		var name = service.Name + "Service";
+		WriteLine("\t//{0} Implementation", name);
+		WriteLine("\tpartial class {0}: DbService, I{0}", name);
+		WriteLine("\t{");
+		WriteLine("");
+		WriteLine("\t\tprivate static readonly Type _contract = typeof (I{0});", name);
+		WriteLine("");
+		WriteLine("\t\tpublic {0}(IDbContext db) : base(db) {{ }}", name);
+		WriteLine("");
+		WriteLine("\t\tpublic Type Contract { get { return _contract; } }");
+		foreach(Action action in service.Actions)
+		{
+			WriteLine(string.Empty);
+			WriteLine("");
+			Write("\t\tprotected internal const string QUERY_{0} = ", action.ActionType.ToUpper());
+			switch (action.CommandType)
+			{
+				case "StoredProcedure":
+					WriteLine(
+						"@\"exec {0} {1}\";",
+						action.CommandText,
+						string.Join(
+							", ",
+							action
+								.Params
+								.Where(p => p.Direction != "ReturnValue")
+								.Select (p => p.Name)
+								.ToList()
+						)
+					);
+					break;
+				default:
+					WriteLine("@\"{0}\";", action.CommandText);
+					break;
+			}
+			//CreateServiceMethod(action, false);
+		}
+		
+		//WriteLine("\t\tIDbContext IDbService.Db { get { return Db; } }");
+		WriteLine("\t}");
+	}
+
+	void CreateServiceMethod(Action action, bool isContract = true)
+	{
+		var modifier = action.Modifier;
+		/*
+		if(modifier == "private"
+			|| modifier.Contains("protected")
+			|| modifier.Contains("internal")
+		)
+		{ return; }
+		*/
+
+		Write("\t\t");
+		if(!isContract)
+		{
+			Write("{0} abstract ", modifier);
+		}
+		var qt = action.QueryType.ToUpperInvariant();
+		switch(qt)
+		{
+			case "ROWSET":
+				Write("IEnumerable<I{0}> {1}", action.Entity, action.ActionType);
+				break;
+			case "NODATA":
+				Write("void {0}", action.ActionType);
+				break;
+		}
+		Write("(");
+		var pflag = false;
+		foreach(Param p in action.Params)
+		{
+			DbType type;
+			if(p.Direction == "ReturnValue" || !Enum.TryParse(p.DbType, out type))
+			{ continue; }
+			if(pflag)
+			{
+				Write(", ");
+			}
+			switch(type)
+			{
+				case DbType.AnsiStringFixedLength:
+				case DbType.StringFixedLength:
+				case DbType.Xml:
+				case DbType.String:
+				case DbType.AnsiString:
+					Write("string {0}", p.Name.Trim('@'));
+					break;
+				case DbType.Byte:
+					Write("byte{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Boolean:
+					Write("bool {0}", p.Name.Trim('@'));
+					break;
+				case DbType.Time:
+				case DbType.Date:
+				case DbType.DateTime:
+				case DbType.DateTime2:
+				case DbType.DateTimeOffset:
+					Write("DateTime{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Decimal:
+				case DbType.Double:
+					Write("double{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Int16:
+					Write("short{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Int32:
+					Write("int{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Int64:
+					Write("long{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Object:
+					Write("object {0}", p.Name.Trim('@'));
+					break;
+				case DbType.SByte:
+					Write("short{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Single:
+					Write("float{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.UInt16:
+					Write("ushort{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.UInt32:
+					Write("uint{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.UInt64:
+					Write("ulong{0} {1}", (p.IsNullable ? "?" : string.Empty), p.Name.Trim('@'));
+					break;
+				case DbType.Guid:
+					Write("Guid {0}", p.Name.Trim('@'));
+					break;
+				default:
+					continue;
+			}
+			pflag = true;
+		}
+		Write(")");
+		WriteLine(";");
+	}
+
+	void CreateEntity(DataTable table)
+	{
+		WriteLine("\tpartial class {0} : I{0}", table.TableName);
+		WriteLine("\t{");
+		foreach(DataColumn c in table.Columns)
+		{
+			CreateProperty(c, true);
+		}
+		WriteLine("\t}");
+	}
+
+	void CreateDataContract(DataTable table, bool isPublic)
+	{
+		Write("\t");
+		if(isPublic)
+		{
+			Write("public ");
+		}
+		WriteLine("partial interface I{0}", table.TableName);
+		WriteLine("\t{");
+		foreach(DataColumn c in table.Columns)
+		{
+			CreateProperty(c);
+		}
+		WriteLine("\t}");
+	}
+
+	void CreateProperty(DataColumn column, bool isPublic = false)
+	{
+		var columnName = column.ColumnName;
+		var displayName = column.Caption;
+		var returnType = column.DataType.Name;
+		var prefix = isPublic ? "public " : "";
+		switch(returnType)
+		{
+			case "Int16":
+				returnType = "short";
+				break;
+			case "Int32":
+				returnType = "int";
+				break;
+			case "Int64":
+				returnType = "long";
+				break;
+			case "Boolean":
+				returnType = "bool";
+				break;
+			case "DateTime":
+				break;
+			case "Guid":
+				break;
+			default:
+				returnType = returnType.ToLower();
+				break;
+		}
+		if(column.AllowDBNull && column.DataType.IsValueType)
+		{ returnType += "?"; }
+		//WriteLine("\t\t[DisplayName(\"{0}\")]", displayName);
+		WriteLine("\t\t{0}{1} {2}", prefix, returnType,columnName);
+
+		Write("\t\t{ ");
+		Write("get; ");
+		Write("set; ");
+		WriteLine("}");
+	}
+
+	IEnumerable<Service> GetServicesFromDataSet(string schemaFile)
+	{
+		XNamespace xs = "http://www.w3.org/2001/XMLSchema";
+		XNamespace msdata = "urn:schemas-microsoft-com:xml-msdata";
+		XNamespace msprop = "urn:schemas-microsoft-com:xml-msprop";
+		XNamespace ds = "urn:schemas-microsoft-com:xml-msdatasource";
+		try 
+		{
+			return XElement
+				.Load(schemaFile)
+				.Descendants()
+				.Where (d => d.Name.LocalName == "TableAdapter")
+				.Select (d => new Service {
+					Name = d.Attribute("Name").Value,
+					Public = !d.Attribute("DataAccessorModifier").Value.Contains("NotPublic"),
+					Actions = d.Descendants(ds + "DbSource")
+						.Select (x => new Action {
+							Entity = d.Attribute("Name").Value,
+							Modifier = (x.Attribute("GetMethodModifier") ?? x.Attribute("Modifier")).Value,
+							ActionType = x.Attribute("UserSourceName").Value,
+							QueryType = x.Attribute("QueryType").Value,
+							CommandType = x.Descendants(ds + "DbCommand").First().Attribute("CommandType").Value,
+							CommandText = x.Descendants(ds + "CommandText").First().Value,
+					
+							Params = x.Descendants(ds + "Parameter").Select(p => new Param{
+								Type = p.Attribute("ProviderType").Value,
+								Name = p.Attribute("ParameterName").Value,
+								Direction = p.Attribute("Direction").Value,
+								DbType = p.Attribute("DbType").Value,
+								IsNullable = bool.Parse(p.Attribute("AllowDbNull").Value)
+							})
+						})
+				}).ToList();
+		}
+		catch (Exception ex)
+		{
+			Write(ex.ToString());
+			throw;
+		}
+	}
+#>
+<#+
+    List<string> __savedOutputs = new List<string>();
+    Engine __engine = new Engine();
+
+    void DeleteOldOutputs()
+    {
+        var templateProjectItem = __getTemplateProjectItem();
+        foreach (EnvDTE.ProjectItem childProjectItem in templateProjectItem.ProjectItems)
+        {
+            if (!__savedOutputs.Contains(childProjectItem.Name))
+			{ childProjectItem.Delete(); }
+        }
+    }
+
+    void ProcessTemplate(string templateFileName, string outputFileName)
+    {
+        var templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+        var outputFilePath = Path.Combine(templateDirectory, outputFileName);
+
+        var template = File.ReadAllText(Host.ResolvePath(templateFileName));
+        var output = __engine.ProcessTemplate(template, Host);
+        File.WriteAllText(outputFilePath, output);
+
+        var templateProjectItem = __getTemplateProjectItem();
+        templateProjectItem.ProjectItems.AddFromFile(outputFilePath);
+
+        __savedOutputs.Add(outputFileName);
+    }
+
+    void SaveOutput(string outputFileName)
+    {
+        var templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+        var outputFilePath = Path.Combine(templateDirectory, outputFileName);
+
+        File.WriteAllText(outputFilePath, this.GenerationEnvironment.ToString());
+        this.GenerationEnvironment = new StringBuilder();
+
+        var templateProjectItem = __getTemplateProjectItem();
+        templateProjectItem.ProjectItems.AddFromFile(outputFilePath);
+
+        __savedOutputs.Add(outputFileName);
+    }
+
+    EnvDTE.ProjectItem __getTemplateProjectItem()
+    {
+        var dteProject = __getTemplateProject();
+
+        var vsProject = __dteProjectToVsProject(dteProject);
+
+        int iFound = 0;
+        uint itemId = 0;
+        var pdwPriority = new VSDOCUMENTPRIORITY[1];
+        int result = vsProject.IsDocumentInProject(Host.TemplateFile, out iFound, pdwPriority, out itemId);
+        if (result != VSConstants.S_OK)
+		{throw new Exception("Unexpected error calling IVsProject.IsDocumentInProject");}
+        if (iFound == 0)
+		{throw new Exception("Cannot retrieve ProjectItem for template file");}
+        if (itemId == 0)
+		{throw new Exception("Cannot retrieve ProjectItem for template file");}
+
+        Microsoft.VisualStudio.OLE.Interop.IServiceProvider itemContext = null;
+        result = vsProject.GetItemContext(itemId, out itemContext);
+        if (result != VSConstants.S_OK)
+		{throw new Exception("Unexpected error calling IVsProject.GetItemContext");}
+        if (itemContext == null)
+		{throw new Exception("IVsProject.GetItemContext returned null");}
+    
+        var itemContextService = new ServiceProvider(itemContext);
+        var templateItem = (EnvDTE.ProjectItem)itemContextService.GetService(typeof(EnvDTE.ProjectItem));
+        Debug.Assert(templateItem != null, "itemContextService.GetService returned null");
+
+        return templateItem;
+    }
+
+    EnvDTE.Project __getTemplateProject()
+    {
+        var hostServiceProvider = (IServiceProvider)Host;
+        if (hostServiceProvider == null)
+		{ throw new Exception("Host property returned unexpected value (null)"); }
+
+        var dte = (EnvDTE.DTE)hostServiceProvider.GetService(typeof(EnvDTE.DTE));
+        if (dte == null)
+		{ throw new Exception("Unable to retrieve EnvDTE.DTE"); }
+
+        var activeSolutionProjects = (Array)dte.ActiveSolutionProjects;
+        if (activeSolutionProjects == null)
+		{ throw new Exception("DTE.ActiveSolutionProjects returned null"); }
+
+        var dteProject = (EnvDTE.Project)activeSolutionProjects.GetValue(0);
+        if (dteProject == null)
+		{ throw new Exception("DTE.ActiveSolutionProjects[0] returned null"); }
+
+        return dteProject;
+    }
+
+    static IVsProject __dteProjectToVsProject(EnvDTE.Project project)
+    {
+        if (project == null) 
+		{ throw new ArgumentNullException("project"); }
+            
+        string projectGuid = null;        
+
+        // DTE does not expose the project GUID that exists at in the msbuild project file.        
+        // Cannot use MSBuild object model because it uses a static instance of the Engine,         
+        // and using the Project will cause it to be unloaded from the engine when the         
+        // GC collects the variable that we declare.       
+        using (XmlReader projectReader = XmlReader.Create(project.FileName))
+        {
+            projectReader.MoveToContent();
+            object nodeName = projectReader.NameTable.Add("ProjectGuid");
+            while (projectReader.Read())
+            {
+                if (Object.Equals(projectReader.LocalName, nodeName))
+                {
+                    projectGuid = (string)projectReader.ReadElementContentAsString(); 
+                    break;
+                }
+            }
+        }
+        if (string.IsNullOrEmpty(projectGuid))
+            throw new Exception("Unable to find ProjectGuid element in the project file");
+
+        var dteServiceProvider = (Microsoft.VisualStudio.OLE.Interop.IServiceProvider)project.DTE;
+        var serviceProvider = new ServiceProvider(dteServiceProvider); 
+        var vsHierarchy = VsShellUtilities.GetHierarchy(serviceProvider, new Guid(projectGuid));
+            
+        var vsProject = (IVsProject)vsHierarchy;
+        if (vsProject == null)
+		{ throw new ArgumentException("Project is not a VS project."); }
+        return vsProject;
+    }
+#>
+<#+
+	class Service
+	{
+		public string Name { get; set; }
+		public bool Public { get; set; }
+		public IEnumerable<Action> Actions { get; set; }
+	}
+
+	class  Action
+	{
+		private string _modifier;
+
+		public string Modifier {
+			get { return _modifier; }
+			set {
+				var modifier = value.ToLowerInvariant();
+				switch(value.ToLowerInvariant())
+				{
+					case "familyorassembly":
+						modifier = "protected internal";
+						break;
+				}
+				_modifier = modifier;
+			}
+		}
+		public string Entity { get; set; }
+		public string ActionType { get; set; }
+		public string CommandType { get; set; }
+		public string CommandText { get; set; }
+		public string QueryType { get; set; }
+		public IEnumerable<Param> Params { get; set; }
+	}
+
+	class Param
+	{
+		public string Type { get; set; }
+		public string Name { get; set; }
+		public string Direction { get; set; }
+		public string DbType { get; set; }
+		public bool IsNullable { get; set; }
+	}
+#>

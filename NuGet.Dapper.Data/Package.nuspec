@@ -7,7 +7,7 @@
         <authors>Maxim Konstantinovski</authors>
         <owners>Maxim Konstantinovski</owners>
         <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
-        <projectUrl>https://github.com/mkonstan/dapper-dot-net</projectUrl>
+        <projectUrl>https://github.com/mkonstan/Dapper.Data</projectUrl>
         <requireLicenseAcceptance>false</requireLicenseAcceptance>
         <description>Trivial micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability.
 ***************************************

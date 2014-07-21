@@ -13,21 +13,21 @@ namespace Dapper.Data
             string sql,
             object param = null,
 			CommandType? commandType = null,
-			int? commandTimeout = null
+			int? commandTimeout = 0
         );
 
         IEnumerable<T> Query<T>(
             string sql,
             object param = null,
             CommandType? commandType = null,
-			int? commandTimeout = null
+			int? commandTimeout = 0
         );
 
 		IEnumerable<dynamic> Query(
             string sql,
             object param = null,
             CommandType? commandType = null,
-			int? commandTimeout = null
+			int? commandTimeout = 0
 		);
 
     	IEnumerable<dynamic> Query(
@@ -35,7 +35,7 @@ namespace Dapper.Data
 			string sql,
 			object param = null,
 			System.Data.CommandType? commandType = null,
-			int? commandTimeout = null
+			int? commandTimeout = 0
 		);
     }
 	/// <summary>
@@ -63,13 +63,13 @@ namespace Dapper.Data
 
 		IEnumerable<T> Query<T>(CommandDefinition definition);
 
-		IEnumerable<TReturn> Query<TFirst, TSecond, TReturn>(string sql, Func<TFirst, TSecond, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null);
-		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TReturn>(string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null);
-		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null);
-		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null);
+		IEnumerable<TReturn> Query<TFirst, TSecond, TReturn>(string sql, Func<TFirst, TSecond, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0);
+		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TReturn>(string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0);
+		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0);
+		IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0);
 
 		SqlMapper.GridReader QueryMultiple(CommandDefinition command);
-		SqlMapper.GridReader QueryMultiple(string sql, dynamic param = null, System.Data.CommandType? commandType = null, int? commandTimeout = null);
+		SqlMapper.GridReader QueryMultiple(string sql, dynamic param = null, System.Data.CommandType? commandType = null, int? commandTimeout = 0);
     }
 
 	/// <summary>
@@ -185,32 +185,32 @@ namespace Dapper.Data
 				return _connection.Query<T>(command);
 			}
 
-			public IEnumerable<TReturn> Query<TFirst, TSecond, TReturn>(string sql, Func<TFirst, TSecond, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<TReturn> Query<TFirst, TSecond, TReturn>(string sql, Func<TFirst, TSecond, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0)
 		    {
 				return _connection.Query(sql, map, param, _transaction, buffered, splitOn, commandTimeout, commandType);
 		    }
 
-			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TReturn>(string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TReturn>(string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0)
 		    {
 				return _connection.Query(sql, map, param, _transaction, buffered, splitOn, commandTimeout, commandType);
 		    }
 
-			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0)
 		    {
 				return _connection.Query(sql, map, param, _transaction, buffered, splitOn, commandTimeout, commandType);
 		    }
 
-			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(string sql, Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn> map, object param = null, bool buffered = true, string splitOn = "Id", CommandType? commandType = null, int? commandTimeout = 0)
 		    {
                 return _connection.Query(sql, map, param, _transaction, buffered, splitOn, commandTimeout, commandType);
 		    }
 
-			public int Execute(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+			public int Execute(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 			{
 				return _connection.Execute(sql, param, _transaction, commandTimeout,  commandType);
 			}
 
-			public IEnumerable<T> Query<T>(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<T> Query<T>(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 			{
 				if (typeof(T) == typeof(IDictionary<string, object>))
 				{
@@ -219,12 +219,12 @@ namespace Dapper.Data
 				return _connection.Query<T>(sql, param, _transaction, true, commandTimeout, commandType);
 			}
 
-			public IEnumerable<dynamic> Query(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<dynamic> Query(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 			{
 				return _connection.Query(sql, param, null, true, commandTimeout, commandType);
 			}
 
-			public IEnumerable<dynamic> Query(Type type, string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+			public IEnumerable<dynamic> Query(Type type, string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 			{
 				return _connection.Query(type, sql, param, _transaction, true, commandTimeout, commandType);
 			}
@@ -234,29 +234,29 @@ namespace Dapper.Data
 				return _connection.QueryMultiple(command);
 			}
 
-			public Dapper.SqlMapper.GridReader QueryMultiple(string sql, dynamic param = null, System.Data.CommandType? commandType = null, int? commandTimeout = null)
+			public Dapper.SqlMapper.GridReader QueryMultiple(string sql, dynamic param = null, System.Data.CommandType? commandType = null, int? commandTimeout = 0)
 			{
 				return _connection.QueryMultiple(new CommandDefinition(sql, param, _transaction, commandTimeout, commandType));
 			}
 
 		}
 
-		public int Execute(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+		public int Execute(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 		{
 			return Batch(s => s.Execute(sql, param, commandType, commandTimeout));
 		}
 
-		public IEnumerable<T> Query<T>(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+		public IEnumerable<T> Query<T>(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 		{
 			return Batch(s => s.Query<T>(sql, param, commandType, commandTimeout));
 		}
 
-		public IEnumerable<dynamic> Query(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+		public IEnumerable<dynamic> Query(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 		{
 			return Batch(s => s.Query(sql, param, commandType, commandTimeout));
 		}
 
-		public IEnumerable<object> Query(Type type, string sql, object param = null, CommandType? commandType = null, int? commandTimeout = null)
+		public IEnumerable<object> Query(Type type, string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 		{
 			return Batch(s => s.Query(type, sql, param, commandType, commandTimeout));
 		}

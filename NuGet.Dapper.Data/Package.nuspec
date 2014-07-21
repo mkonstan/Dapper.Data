@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
     <metadata>
         <id>Dapper.Data</id>
-        <version>1.11</version>
+        <version>1.13</version>
         <title>Dapper.Data</title>
         <authors>Maxim Konstantinovski</authors>
         <owners>Maxim Konstantinovski</owners>
@@ -42,7 +42,9 @@ db.Batch(s =&gt;
 // using it with ninject
 kernel.Bind&lt;IDbContext&gt;().To&lt;TestDb&gt;().InSingletonScope();</description>
         <summary>Trivial micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability.</summary>
-        <releaseNotes>* 1.11
+        <releaseNotes>* 1.13
+* changed commandTimeout to 0 by default (infinite)
+* 1.11
 * Using new version of Dapper
 * added commandTimeout to api
 * added CommandDefinition to api

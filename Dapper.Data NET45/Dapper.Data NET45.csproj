@@ -53,8 +53,9 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Dapper">
-      <HintPath>packages\Dapper.1.27\lib\net45\Dapper.dll</HintPath>
+    <Reference Include="Dapper, Version=1.29.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\Pzena\Finance\Compensation Website\packages\Dapper.1.29\lib\net45\Dapper.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -72,9 +73,6 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>DatasetTransformer.tt</DependentUpon>
     </Compile>
-    <Compile Include="..\Dapper.Data NET40\Data\CommandDefinitionHelper.cs">
-      <Link>Data\CommandDefinitionHelper.cs</Link>
-    </Compile>
     <Compile Include="..\Dapper.Data NET40\Data\ConnectionStringBuilder.cs">
       <Link>Data\ConnectionStringBuilder.cs</Link>
     </Compile>
@@ -86,6 +84,12 @@
     </Compile>
     <Compile Include="..\Dapper.Data NET40\Data\DbContext.cs">
       <Link>Data\DbContext.cs</Link>
+    </Compile>
+    <Compile Include="..\Dapper.Data NET40\Data\Generic\DbContext.cs">
+      <Link>Data\Generic\DbContext.cs</Link>
+    </Compile>
+    <Compile Include="..\Dapper.Data NET40\Data\Generic\Services\DbServiceProvider.cs">
+      <Link>Data\Generic\Services\DbServiceProvider.cs</Link>
     </Compile>
     <Compile Include="..\Dapper.Data NET40\Data\Service\DbService.cs">
       <Link>Data\Service\DbService.cs</Link>
@@ -147,7 +151,7 @@ xcopy "$(TargetPath)" "$(SolutionDir)NuGet.Dapper.Data\lib\net45" /V /H /R /K /Y
   </PropertyGroup>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties BuildVersion_UpdateFileVersion="True" BuildVersion_UpdateAssemblyVersion="True" BuildVersion_ConfigurationName="Release" BuildVersion_BuildVersioningStyle="None.None.None.YearDayOfYear" />
+      <UserProperties BuildVersion_BuildVersioningStyle="None.None.None.YearDayOfYear" BuildVersion_ConfigurationName="Release" BuildVersion_UpdateAssemblyVersion="True" BuildVersion_UpdateFileVersion="True" />
     </VisualStudio>
   </ProjectExtensions>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

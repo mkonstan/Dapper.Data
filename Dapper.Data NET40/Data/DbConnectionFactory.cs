@@ -62,8 +62,7 @@ namespace System.Data.Common
 		/// </summary>
 		internal static IDbConnection CreateOpenedConnection(this DbProviderFactory sender, string connectionString)
 		{
-			var connection = sender.CreateConnection();
-			connection.ConnectionString = connectionString;
+			var connection = sender.CreateConnection(connectionString);
 			connection.Open();
 			return connection;
 		}

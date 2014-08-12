@@ -1,19 +1,20 @@
 ﻿
 using System;
+using Dapper.Data.Generic.Service;
 
 namespace Dapper.Data.Service
 {
 	public interface IDbService
 	{
-		IDbContext Db { get; }
 	}
 
 	public abstract class DbService : IDbService
 	{
-		public IDbContext Db
-		{ get; private set; }
+		protected DbService(IDbServiceProvider<IDbServiceProviderSession> db)
+		{
+			Db = db;
+		}
 
-		protected DbService(IDbContext db)
-		{ Db = db; }
+		protected IDbServiceProvider<IDbServiceProviderSession> Db { get; private set; }
 	}
 }

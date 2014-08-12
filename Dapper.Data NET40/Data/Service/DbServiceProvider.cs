@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Dapper.Data.Generic;
+using Dapper.Data.Generic.Service;
 
 namespace Dapper.Data.Service
 {
-	public interface IDbServiceProvider: IServiceProvider
+	public interface IDbServiceProviderSession : ISession, IDbServiceProvider
 	{
-		[Obsolete("Please use GetService instead")]
-		T For<T>() where T : IDbService;
-		T GetService<T>() where T : IDbService;
+	}
+
+	public interface IDbServiceProvider : IDbServiceProvider<IDbServiceProviderSession>
+	{
 	}
 
 	/// <summary>
@@ -19,52 +22,61 @@ namespace Dapper.Data.Service
 	/// actions that can be performed by the service
 	/// Heavy usage of iterfaces enable me to use injection and substitution.
 	/// </summary>
-	public abstract class DbServiceProvider : DbContext, IDbServiceProvider
+	public class DbServiceProvider : DbServiceProvider<IDbServiceProviderSession>
 	{
-		private readonly ConcurrentDictionary<Type, IDbService> _services
-			= new ConcurrentDictionary<Type, IDbService>();
-
-		protected DbServiceProvider(string connectionName)
-			: base(connectionName)
+		protected DbServiceProvider(string connectionName) : base(connectionName)
 		{ }
 
-		protected DbServiceProvider(IDbConnectionFactory connectionFactory)
-			: base(connectionFactory)
+		protected DbServiceProvider(IDbConnectionFactory connectionFactory) : base(connectionFactory)
 		{ }
 
-		/// <summary>
-		/// registeres new service
-		/// </summary>
-		protected void RegisterService<T>(Type constract, T service) where T : IDbService
+		protected override IDbServiceProviderSession CreateSession()
 		{
-			_services[constract] = service;
+			return new ServiceSession(this, ConnectionFactory);
 		}
 
-		/// <summary>
-		/// use this to retreave the service
-		/// </summary>
-		[Obsolete("Please use GetService instead")]
-		public T For<T>() where T : IDbService
+		
+		class ServiceSession : Session, IDbServiceProviderSession
 		{
-			return GetService<T>();
-		}
+			private readonly IDbServiceProvider<IDbServiceProviderSession> _serviceProvider;
 
-		/// <summary>
-		/// used to retreave the service instance
-		/// </summary>
-		public T GetService<T>() where T : IDbService
-		{
-			return (T)GetService(typeof(T));
-		}
+			public ServiceSession(
+				IDbServiceProvider<IDbServiceProviderSession> serviceProvider,
+				IDbConnectionFactory connectionFactory
+			) : base(connectionFactory)
+			{
+				_serviceProvider = serviceProvider;
+			}
 
-		object IServiceProvider.GetService(Type serviceType)
-		{
-			return GetService(serviceType);
-		}
+			public void Batch(Action<IDbServiceProviderSession> body)
+			{
+				body(this);
+			}
 
-		private object GetService(Type serviceType)
-		{
-			return _services[serviceType];
+			public TResult Batch<TResult>(Func<IDbServiceProviderSession, TResult> body)
+			{
+				return body(this);
+			}
+
+			public void Dispose()
+			{
+				Dispose(true);
+			}
+
+			public T GetService<T>() where T : IDbService
+			{
+				return (T)GetServiceConstructor<T>()(this);
+			}
+
+			public object GetService(Type serviceType)
+			{
+				return _serviceProvider.GetService(serviceType);
+			}
+
+			public Func<IDbServiceProvider<IDbServiceProviderSession>, IDbService> GetServiceConstructor<T>()
+			{
+				return _serviceProvider.GetServiceConstructor<T>();
+			}
 		}
 	}
 }

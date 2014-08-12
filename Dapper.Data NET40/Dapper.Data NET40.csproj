@@ -52,9 +52,9 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Dapper, Version=1.27.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="Dapper, Version=1.29.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>packages\Dapper.1.27\lib\net40\Dapper.dll</HintPath>
+      <HintPath>..\Dapper.Data NET45\packages\Dapper.1.29\lib\net40\Dapper.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -66,13 +66,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Data\CommandDefinitionHelper.cs" />
     <Compile Include="Data\ConnectionStringBuilder.cs" />
     <Compile Include="Data\DbConnectionFactory.cs" />
     <Compile Include="Data\DbContext.cs" />
+    <Compile Include="Data\Generic\DbContext.cs" />
+    <Compile Include="Data\Generic\Services\DbService.cs" />
+    <Compile Include="Data\Generic\Services\DbServiceProvider.cs" />
     <Compile Include="Data\Service\DbService.cs" />
     <Compile Include="Data\Service\DbServiceProvider.cs" />
     <Compile Include="Data\SqlServer\SqlConnectionFactory.cs" />
+    <Compile Include="Data\SqlServer\SqlContext.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

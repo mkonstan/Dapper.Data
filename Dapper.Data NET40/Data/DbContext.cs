@@ -37,6 +37,28 @@ namespace Dapper.Data
 			System.Data.CommandType? commandType = null,
 			int? commandTimeout = 0
 		);
+
+        T Single<T>(
+            string sql,
+            object param = null,
+            CommandType? commandType = null,
+            int? commandTimeout = 0
+        );
+
+        dynamic Single(
+            string sql,
+            object param = null,
+            CommandType? commandType = null,
+            int? commandTimeout = 0
+        );
+
+        dynamic Single(
+            System.Type type,
+            string sql,
+            object param = null,
+            System.Data.CommandType? commandType = null,
+            int? commandTimeout = 0
+        );
     }
 	/// <summary>
 	/// Default behavior exposed by DbContext helps with injection
@@ -239,7 +261,21 @@ namespace Dapper.Data
 				return _connection.QueryMultiple(new CommandDefinition(sql, param, _transaction, commandTimeout, commandType));
 			}
 
-		}
+            public T Single<T>(string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+            {
+                return Query<T>(sql, param, commandType, commandTimeout).SingleOrDefault();
+            }
+
+            public dynamic Single(string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+            {
+                return Query(sql, param, commandType, commandTimeout).SingleOrDefault();
+            }
+
+            public dynamic Single(Type type, string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+            {
+                return Query(type, sql, param, commandType, commandTimeout).SingleOrDefault();
+            }
+        }
 
 		public int Execute(string sql, object param = null, CommandType? commandType = null, int? commandTimeout = 0)
 		{
@@ -260,5 +296,20 @@ namespace Dapper.Data
 		{
 			return Batch(s => s.Query(type, sql, param, commandType, commandTimeout));
 		}
-	}
+
+        public T Single<T>(string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+        {
+            return Batch(s => s.Single<T>(sql, param, commandType, commandTimeout));
+        }
+
+        public dynamic Single(string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+        {
+            return Batch(s => s.Single(sql, param, commandType, commandTimeout));
+        }
+
+        public dynamic Single(Type type, string sql, object param = null, CommandType? commandType = default(CommandType?), int? commandTimeout = 0)
+        {
+            return Batch(s => s.Single(type, sql, param, commandType, commandTimeout));
+        }
+    }
 }

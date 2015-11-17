@@ -8,10 +8,14 @@ namespace Dapper.Data.SqlClient
 	/// </summary>
 	public class SqlConnectionFactory : IDbConnectionFactory
 	{
-		private SqlConnectionFactory(SqlConnectionBuilder builder)
-		{
-			ConnectionString = builder.ToString();
-		}
+        public SqlConnectionFactory(string connectionString)
+        {
+            ConnectionString = connectionString;
+        }
+
+        private SqlConnectionFactory(SqlConnectionBuilder builder)
+            :this(builder.ToString())
+		{ }
 
 		public SqlConnectionFactory(string serverName, string databaseName)
 			: this(SqlConnectionBuilder.Instance(serverName, databaseName))
@@ -21,7 +25,7 @@ namespace Dapper.Data.SqlClient
 			: this(SqlConnectionBuilder.Instance(serverName, databaseName, userId, password))
 		{ }
 
-		public string ConnectionString { get; private set; }
+        public string ConnectionString { get; private set; }
 
 		public IDbConnection Create()
 		{

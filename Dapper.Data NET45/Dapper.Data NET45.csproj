@@ -53,8 +53,9 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Dapper">
-      <HintPath>packages\Dapper.1.27\lib\net45\Dapper.dll</HintPath>
+    <Reference Include="Dapper, Version=1.40.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\Internal.pzena.com\Compensation Website\packages\Dapper.1.42\lib\net45\Dapper.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -72,14 +73,8 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>DatasetTransformer.tt</DependentUpon>
     </Compile>
-    <Compile Include="..\Dapper.Data NET40\Data\CommandDefinitionHelper.cs">
-      <Link>Data\CommandDefinitionHelper.cs</Link>
-    </Compile>
     <Compile Include="..\Dapper.Data NET40\Data\ConnectionStringBuilder.cs">
       <Link>Data\ConnectionStringBuilder.cs</Link>
-    </Compile>
-    <Compile Include="..\Dapper.Data NET40\Data\DapperHelper.cs">
-      <Link>Data\DapperHelper.cs</Link>
     </Compile>
     <Compile Include="..\Dapper.Data NET40\Data\DbConnectionFactory.cs">
       <Link>Data\DbConnectionFactory.cs</Link>
@@ -93,11 +88,17 @@
     <Compile Include="..\Dapper.Data NET40\Data\Service\DbServiceProvider.cs">
       <Link>Data\Service\DbServiceProvider.cs</Link>
     </Compile>
-    <Compile Include="..\Dapper.Data NET40\Data\SqlServer\DapperHelper.cs">
-      <Link>Data\SqlServer\DapperHelper.cs</Link>
+    <Compile Include="..\Dapper.Data NET40\Data\Service\Generic\DbService.cs">
+      <Link>Data\Service\Generic\DbService.cs</Link>
     </Compile>
-    <Compile Include="..\Dapper.Data NET40\Data\SqlServer\SqlConnectionFactory.cs">
-      <Link>Data\SqlServer\SqlConnectionFactory.cs</Link>
+    <Compile Include="..\Dapper.Data NET40\Data\SqlClient\Generic\SqlDbServiceProvider.cs">
+      <Link>Data\SqlClient\Generic\SqlDbServiceProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\Dapper.Data NET40\Data\SqlClient\SqlConnectionFactory.cs">
+      <Link>Data\SqlClient\SqlConnectionFactory.cs</Link>
+    </Compile>
+    <Compile Include="..\Dapper.Data NET40\Data\SqlClient\SqlDbServiceProvider.cs">
+      <Link>Data\SqlClient\SqlDbServiceProvider.cs</Link>
     </Compile>
     <Compile Include="..\Dapper.Data NET40\Properties\AssemblyInfo.cs">
       <Link>Properties\AssemblyInfo.cs</Link>

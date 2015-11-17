@@ -3,17 +3,22 @@ using System;
 
 namespace Dapper.Data.Service
 {
-	public interface IDbService
+    public interface IDbServiceContract : IDbService
+    {
+        Type Contract { get; }
+    }
+
+    public interface IDbService
 	{
-		IDbContext Db { get; }
+        IDbContext Db { get; }
 	}
 
-	public abstract class DbService : IDbService
+    public abstract class DbService : IDbService
 	{
-		public IDbContext Db
+        public IDbContext Db
 		{ get; private set; }
 
-		protected DbService(IDbContext db)
+        protected DbService(IDbContext db)
 		{ Db = db; }
 	}
 }

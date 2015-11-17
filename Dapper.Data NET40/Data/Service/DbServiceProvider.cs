@@ -32,10 +32,15 @@ namespace Dapper.Data.Service
 			: base(connectionFactory)
 		{ }
 
-		/// <summary>
-		/// registeres new service
-		/// </summary>
-		protected void RegisterService<T>(Type constract, T service) where T : IDbService
+        /// <summary>
+        /// registeres new service
+        /// </summary>
+        protected void RegisterService(IDbServiceContract service)
+        {
+            RegisterService(service.Contract, service);
+        }
+
+        protected void RegisterService<T>(Type constract, T service) where T : IDbService
 		{
 			_services[constract] = service;
 		}

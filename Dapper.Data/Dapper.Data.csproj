@@ -1,0 +1,85 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Dapper.Data</Title>
+    <Authors>Maxim Konstantinovski</Authors>
+    <RootNamespace>Dapper</RootNamespace>
+    <TargetFrameworks>netcoreapp1.1;netstandard1.3;net40;net45</TargetFrameworks>
+    <Version>2.0.0</Version>
+    <Copyright>Copyright Maxim Konstantinovski 2012</Copyright>
+    <PackageTags>orm;sql;micro-orm;dapper</PackageTags>
+    <PackageVersion>2.0.0</PackageVersion>
+    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/mkonstan/Dapper.Data</PackageProjectUrl>
+    <Description>The connection management wrapper for Dapper.net.
+***************************************
+// To create an instance of database context inherit DbContext
+class TestDb : DbContext
+{
+  private const string ConnectionName = "DefaultConnection";
+  private TestDb()
+    : base(ConnectionName)
+  { }
+}
+
+// execute multiple statatements using same connection
+// connection and transaction (if needed)
+var db = new TestDb();
+db.Batch(s =&amp;gt;
+{
+  s.BeginTransaction();
+  try
+  {
+    s.Execute([Your query]);
+    s.CommitTransaction();
+  }
+  catch
+  {
+    s.RollbackTransaction();
+    throw;
+  }
+});
+
+// using it with ninject
+kernel.Bind&amp;lt;IDbContext&amp;gt;().To&amp;lt;TestDb&amp;gt;().InSingletonScope();</Description>
+    <PackageReleaseNotes>* 2.0.0
+* Upgraded assembly to be compatable with .net core and standard
+* Broke dependence on ConnectionManager. You will need to create
+* Db spesific connection factory see [SqlConnectionFactory] as an exaple.
+* 1.14
+* changed commandTimeout to 0 by default (infinite)
+* 1.11
+* Using new version of Dapper
+* added commandTimeout to api
+* added CommandDefinition to api
+* added QueryMultiple
+* Query&amp;lt;T&amp;gt; will check if T is IDictionary&amp;lt;string, object&amp;gt; and will return data as IDictionary&amp;lt;string, object&amp;gt;
+* 1.7
+* Enable overriding service using RegisterService
+* 1.6
+* Refactored common common commands in to IDbCommand interface
+* Added multi mapping query support
+* 1.4
+* DbServiceProvider now implements IServiceProvider
+* For is obsolete use GetService to retreave services
+* Included T4 template to use on dataset to create services. T4 name must match dataset name. Also when adding dataset clear its custom tool property. The dataset is used only as GUI designer for your POCO(s) and services. The T4 will create one interface per table and a one interface that implement's IDbService and one base class that inherit's DbService eposing all queries defined in dataset as methods.
+* 1.0
+* Streamlined connection and transaction management
+* Batch query processing
+* Can use ninject
+* Thread safe
+* Connection can be defined in .config file</PackageReleaseNotes>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="1.50.2" />
+  </ItemGroup>
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net40' OR '$(TargetFramework)' == 'net45' ">
+    <Reference Include="System.Data" />
+    <Reference Include="System.Data.Linq" />
+    <Reference Include="System" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+  <ItemGroup Condition=" '$(TargetFramework)' == 'netstandard1.3' ">
+    <PackageReference Include="Microsoft.CSharp" Version="4.3.0" />
+  </ItemGroup>
+</Project>

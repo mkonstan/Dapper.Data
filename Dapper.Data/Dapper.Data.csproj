@@ -1,48 +1,37 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Title>Dapper.Data</Title>
     <Authors>Maxim Konstantinovski</Authors>
-    <RootNamespace>Dapper</RootNamespace>
-    <TargetFrameworks>netcoreapp1.1;netstandard1.3;net40;net45</TargetFrameworks>
-    <Version>2.0.0</Version>
+    <RootNamespace>Dapper.Data</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>3.0.0</Version>
+    <PackageVersion>3.0.0</PackageVersion>
     <Copyright>Copyright Maxim Konstantinovski 2012</Copyright>
     <PackageTags>orm;sql;micro-orm;dapper</PackageTags>
-    <PackageVersion>2.0.0</PackageVersion>
-    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/mkonstan/Dapper.Data</PackageProjectUrl>
-    <Description>The connection management wrapper for Dapper.net.
-***************************************
-// To create an instance of database context inherit DbContext
-class TestDb : DbContext
-{
-  private const string ConnectionName = "DefaultConnection";
-  private TestDb()
-    : base(ConnectionName)
-  { }
-}
-
-// execute multiple statatements using same connection
-// connection and transaction (if needed)
-var db = new TestDb();
-db.Batch(s =&amp;gt;
-{
-  s.BeginTransaction();
-  try
-  {
-    s.Execute([Your query]);
-    s.CommitTransaction();
-  }
-  catch
-  {
-    s.RollbackTransaction();
-    throw;
-  }
-});
-
-// using it with ninject
-kernel.Bind&amp;lt;IDbContext&amp;gt;().To&amp;lt;TestDb&amp;gt;().InSingletonScope();</Description>
-    <PackageReleaseNotes>* 2.0.0
+    <Description>Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>* 3.0.0
+* Targets net10.0 only; moves all types to Dapper.Data.
+* IDbContext/ISession/IDbCommand -> DbContext&lt;T&gt;/DbSession&lt;T&gt;.
+* Abstract DbContext(IDbConnectionFactory) -> new DbContext&lt;T&gt;(connectionString, columnNames).
+* SqlDbContext(cs) -> DbContext&lt;Microsoft.Data.SqlClient.SqlConnection&gt;(cs).
+* Single/Single&lt;T&gt;/Single(Type) -> QuerySingleOrDefault.
+* Query&lt;T&gt;, Query(Type), multi-map Query&lt;T1..T5,TReturn&gt; and CommandDefinition overloads -> Dapper on session.Connection with session.Transaction.
+* Query&lt;IDictionary&lt;string,object&gt;&gt; -> Query, then cast each row.
+* commandTimeout defaults to null (provider default); pass 0 to keep infinite.
+* A second BeginTransaction and Commit without a transaction now throw.
+* DbServiceProvider, DbService, ConnectionStringBuilder and SqlConnectionFactory are removed; use the provider's DbConnectionStringBuilder.
+* Adds async APIs, explicit First/Single methods and configurable ordinal column matching.
+* Missing dynamic columns and duplicate result columns throw; alias duplicate columns.
+* Uncommitted batches roll back and throw; sessions and readers cannot outlive their batch.
+* 2.0.0
 * Upgraded assembly to be compatable with .net core and standard
 * Broke dependence on ConnectionManager. You will need to create
 * Db spesific connection factory see [SqlConnectionFactory] as an exaple.
@@ -71,15 +60,7 @@ kernel.Bind&amp;lt;IDbContext&amp;gt;().To&amp;lt;TestDb&amp;gt;().InSingletonSc
 * Connection can be defined in .config file</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="1.50.2" />
-  </ItemGroup>
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net40' OR '$(TargetFramework)' == 'net45' ">
-    <Reference Include="System.Data" />
-    <Reference Include="System.Data.Linq" />
-    <Reference Include="System" />
-    <Reference Include="Microsoft.CSharp" />
-  </ItemGroup>
-  <ItemGroup Condition=" '$(TargetFramework)' == 'netstandard1.3' ">
-    <PackageReference Include="Microsoft.CSharp" Version="4.3.0" />
+    <PackageReference Include="Dapper" Version="2.1.89" />
+    <None Include="..\README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

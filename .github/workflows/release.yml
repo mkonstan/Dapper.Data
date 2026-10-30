@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token for NuGet Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build Dapper.Data.sln -c Release
+
+      - name: Test
+        run: dotnet test Dapper.Data.sln -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack Dapper.Data/Dapper.Data.csproj -c Release -o artifacts
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/*nupkg
+
+      # Trusted Publishing: exchange the GitHub OIDC token for a 1-hour NuGet API key.
+      # Requires a nuget.org Trusted Publishing policy (owner mkonstan, repo
+      # Dapper.Data, workflow release.yml) and the NUGET_USER repo variable.
+      - name: NuGet login (OIDC)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          --skip-duplicate

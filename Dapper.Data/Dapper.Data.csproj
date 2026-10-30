@@ -15,6 +15,8 @@
     <PackageTags>orm;sql;micro-orm;dapper</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/mkonstan/Dapper.Data</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mkonstan/Dapper.Data</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <Description>Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>* 3.0.0

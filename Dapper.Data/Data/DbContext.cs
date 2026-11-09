@@ -9,19 +9,33 @@ namespace Dapper.Data;
 /// <remarks>Immutable and safe to share concurrently, including as a singleton. Subclasses may name a database without overriding lifecycle rules.</remarks>
 public class DbContext<TConnection> where TConnection : DbConnection, new()
 {
-    private readonly string _connectionString;
+    private readonly Func<TConnection> _connectionFactory;
     private readonly ColumnNameMatching _columnNames;
 
     /// <summary>Validates the settings and lets the provider parse the connection string without opening it.</summary>
     public DbContext(string connectionString, ColumnNameMatching columnNames = ColumnNameMatching.CaseSensitive)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        if (!Enum.IsDefined(columnNames))
-            throw new ArgumentOutOfRangeException(nameof(columnNames), columnNames, "Use CaseSensitive or CaseInsensitive.");
-        _connectionString = connectionString;
-        _columnNames = columnNames;
+        _columnNames = ValidColumnNames(columnNames);
+        _connectionFactory = () => new() { ConnectionString = connectionString };
         using var connection = CreateConnection();
     }
+
+    /// <summary>Takes a factory that returns a new, closed connection each time a call or batch needs one.</summary>
+    /// <remarks>For connections a string cannot describe: one made by a provider's data source, one that carries a sign-in token, or a test's recording connection.
+    /// <para>The factory is not called here, unlike the string constructor's parse: making a connection is the factory's own code and may have effects its owner counts. A factory that returns null or a connection that is not closed fails the call that asked for it, and that connection is left to its owner.</para></remarks>
+    public DbContext(Func<TConnection> connectionFactory, ColumnNameMatching columnNames = ColumnNameMatching.CaseSensitive)
+    {
+        ArgumentNullException.ThrowIfNull(connectionFactory);
+        _columnNames = ValidColumnNames(columnNames);
+        _connectionFactory = connectionFactory;
+    }
+
+    /// <summary>Refuses a column-name rule outside the enum, for both constructors.</summary>
+    private static ColumnNameMatching ValidColumnNames(ColumnNameMatching columnNames) =>
+        Enum.IsDefined(columnNames)
+            ? columnNames
+            : throw new ArgumentOutOfRangeException(nameof(columnNames), columnNames, "Use CaseSensitive or CaseInsensitive.");
 
     /// <summary>Runs a callback once on one open connection, closing its session on return.</summary>
     /// <remarks>An active transaction is rolled back; normal return without committing is an error.</remarks>
@@ -116,7 +130,16 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
     public TResult Batch<TResult>(Func<DbSession<TConnection>, Task<TResult>> func) => throw new NotSupportedException();
 
     /// <summary>Creates every connection in one place without exposing the secret-bearing string.</summary>
-    private TConnection CreateConnection() => new() { ConnectionString = _connectionString };
+    /// <remarks>Checks the factory's result before any caller's using statement owns it, so a shared open connection is refused, never disposed.</remarks>
+    private TConnection CreateConnection()
+    {
+        const string rule = "It must return a new, closed connection for each call.";
+        var connection = _connectionFactory()
+            ?? throw new InvalidOperationException($"The connection factory returned null. {rule}");
+        return connection.State == ConnectionState.Closed
+            ? connection
+            : throw new InvalidOperationException($"The connection factory returned a connection that is not closed ({connection.State}). {rule}");
+    }
 
     /// <summary>Executes a command and sums affected rows for enumerable parameters.</summary>
     public int Execute(string sql, object? param = null, CommandType? commandType = null, int? commandTimeout = null)

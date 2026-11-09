@@ -23,7 +23,7 @@ public sealed class ContractTests : IDisposable
     [Fact]
     public void T01_NullConnectionString()
     {
-        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>(null!)).ParamName);
+        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>((string)null!)).ParamName);
     }
 
     [Theory]
@@ -51,7 +51,7 @@ public sealed class ContractTests : IDisposable
     public void T05_UndefinedEnum()
     {
         Assert.Equal("columnNames", Assert.Throws<ArgumentOutOfRangeException>(() => new DbContext<SqliteConnection>(_db.ConnectionString, (ColumnNameMatching)7)).ParamName);
-        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>(null!, (ColumnNameMatching)7)).ParamName);
+        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>((string)null!, (ColumnNameMatching)7)).ParamName);
     }
 
     [Fact]

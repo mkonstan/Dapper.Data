@@ -2,7 +2,7 @@
 
 Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.
 
-Version 3.0.0 targets **net10.0** and uses Dapper 2.1.89. All library types are in `Dapper.Data`.
+Version 3.1.0 targets **net10.0** and uses Dapper 2.1.89. All library types are in `Dapper.Data`.
 Install `Dapper.Data` and the provider your application uses, such as `Microsoft.Data.Sqlite` or
 `Microsoft.Data.SqlClient`.
 
@@ -19,6 +19,17 @@ The constructor validates and parses the connection string without opening a con
 call creates, opens and disposes its own connection. The context holds no open connection or mutable
 state: share one instance concurrently or register it as a singleton. A session is **not thread-safe**;
 finish its work, readers and enumerations inside the callback. Do not dispose `session.Connection`.
+
+When a connection needs more than a string (a provider data source, a sign-in token set on each
+connection, a test connection that records what it ran), pass a factory instead. The context calls it
+once per call or batch, never in the constructor; it must return a new, closed connection, which the
+context opens and disposes. Null or a connection that is not closed fails that call with
+`InvalidOperationException`, and the returned connection is left alone.
+
+```csharp
+await using var source = NpgsqlDataSource.Create(connectionString);
+var pg = new DbContext<NpgsqlConnection>(source.CreateConnection);
+```
 
 ```csharp
 db.Execute("INSERT INTO People(Name) VALUES (@Name)", new { Name = "Ann" });

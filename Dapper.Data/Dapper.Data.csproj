@@ -9,8 +9,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>3.0.0</Version>
-    <PackageVersion>3.0.0</PackageVersion>
+    <Version>3.1.0</Version>
+    <PackageVersion>3.1.0</PackageVersion>
     <Copyright>Copyright Maxim Konstantinovski 2012</Copyright>
     <PackageTags>orm;sql;micro-orm;dapper</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -19,7 +19,9 @@
     <RepositoryType>git</RepositoryType>
     <Description>Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>* 3.0.0
+    <PackageReleaseNotes>* 3.1.0
+* Adds new DbContext&lt;T&gt;(connectionFactory, columnNames): the factory returns a new, closed connection per call or batch (provider data sources, per-connection sign-in tokens, test connections). The string constructor is unchanged; a literal null argument now needs a cast, (string)null.
+* 3.0.0
 * Targets net10.0 only; moves all types to Dapper.Data.
 * IDbContext/ISession/IDbCommand -> DbContext&lt;T&gt;/DbSession&lt;T&gt;.
 * Abstract DbContext(IDbConnectionFactory) -> new DbContext&lt;T&gt;(connectionString, columnNames).

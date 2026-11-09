@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Dapper.Data.Tests;
 
-/// <summary>Pins the connection-factory constructor: when the factory runs, what it must return, and that it changes nothing else.</summary>
+/// <summary>Pins DbContext.FromFactory: when the factory runs, what it must return, and that it changes nothing else.</summary>
 public sealed class ConnectionFactoryTests : IDisposable
 {
     private readonly DatabaseFixture _db = new();
@@ -24,27 +24,27 @@ public sealed class ConnectionFactoryTests : IDisposable
     [Fact]
     public void F01_NullFactory()
     {
-        Assert.Equal("connectionFactory", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>((Func<SqliteConnection>)null!)).ParamName);
+        Assert.Equal("connectionFactory", Assert.Throws<ArgumentNullException>(() => DbContext<SqliteConnection>.FromFactory(null!)).ParamName);
     }
 
     [Fact]
     public void F02_UndefinedEnum()
     {
-        Assert.Equal("columnNames", Assert.Throws<ArgumentOutOfRangeException>(() => new DbContext<SqliteConnection>(Make, (ColumnNameMatching)7)).ParamName);
-        Assert.Equal("connectionFactory", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>((Func<SqliteConnection>)null!, (ColumnNameMatching)7)).ParamName);
+        Assert.Equal("columnNames", Assert.Throws<ArgumentOutOfRangeException>(() => DbContext<SqliteConnection>.FromFactory(Make, (ColumnNameMatching)7)).ParamName);
+        Assert.Equal("connectionFactory", Assert.Throws<ArgumentNullException>(() => DbContext<SqliteConnection>.FromFactory(null!, (ColumnNameMatching)7)).ParamName);
     }
 
     [Fact]
     public void F03_ConstructionDoesNotCallTheFactory()
     {
-        _ = new DbContext<SqliteConnection>(Make);
+        _ = DbContext<SqliteConnection>.FromFactory(Make);
         Assert.Empty(_made);
     }
 
     [Fact]
     public async Task F04_EachCallUsesOneNewConnectionAndDisposesIt()
     {
-        var ctx = new DbContext<SqliteConnection>(Make);
+        var ctx = DbContext<SqliteConnection>.FromFactory(Make);
         Assert.Equal(2, ctx.Query("SELECT Id FROM People").Count);
         Assert.Equal(1, await ctx.ExecuteAsync("INSERT INTO People(Name) VALUES('Cy')"));
         SqliteConnection? seen = null;
@@ -61,7 +61,7 @@ public sealed class ConnectionFactoryTests : IDisposable
     [Fact]
     public async Task F05_NullFromTheFactoryFailsTheCall()
     {
-        var ctx = new DbContext<SqliteConnection>(() => null!);
+        var ctx = DbContext<SqliteConnection>.FromFactory(() => null!);
         var error = Assert.Throws<InvalidOperationException>(() => ctx.Query("SELECT 1"));
         Assert.Equal("The connection factory returned null. It must return a new, closed connection for each call.", error.Message);
         var asyncError = await Assert.ThrowsAsync<InvalidOperationException>(() => ctx.QueryAsync("SELECT 1"));
@@ -73,7 +73,7 @@ public sealed class ConnectionFactoryTests : IDisposable
     {
         using var shared = new SqliteConnection(_db.ConnectionString);
         shared.Open();
-        var ctx = new DbContext<SqliteConnection>(() => shared);
+        var ctx = DbContext<SqliteConnection>.FromFactory(() => shared);
         var error = Assert.Throws<InvalidOperationException>(() => ctx.Query("SELECT 1"));
         Assert.Equal("The connection factory returned a connection that is not closed (Open). It must return a new, closed connection for each call.", error.Message);
         await Assert.ThrowsAsync<InvalidOperationException>(() => ctx.QueryAsync("SELECT 1"));
@@ -85,7 +85,7 @@ public sealed class ConnectionFactoryTests : IDisposable
     public async Task F07_FactoryExceptionsPropagateUnchanged()
     {
         var boom = new ApplicationException("factory boom");
-        var ctx = new DbContext<SqliteConnection>(() => throw boom);
+        var ctx = DbContext<SqliteConnection>.FromFactory(() => throw boom);
         Assert.Same(boom, Assert.Throws<ApplicationException>(() => ctx.Query("SELECT 1")));
         Assert.Same(boom, await Assert.ThrowsAsync<ApplicationException>(() => ctx.BatchAsync(_ => Task.CompletedTask)));
     }
@@ -93,7 +93,7 @@ public sealed class ConnectionFactoryTests : IDisposable
     [Fact]
     public async Task F08_CancelledCallsNeverCallTheFactory()
     {
-        var ctx = new DbContext<SqliteConnection>(Make);
+        var ctx = DbContext<SqliteConnection>.FromFactory(Make);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ctx.QueryAsync("SELECT 1", cancellationToken: cancelled.Token));
@@ -103,8 +103,8 @@ public sealed class ConnectionFactoryTests : IDisposable
     [Fact]
     public void F09_ColumnNameMatchingStillApplies()
     {
-        var sensitive = new DbContext<SqliteConnection>(Make);
-        var insensitive = new DbContext<SqliteConnection>(Make, ColumnNameMatching.CaseInsensitive);
+        var sensitive = DbContext<SqliteConnection>.FromFactory(Make);
+        var insensitive = DbContext<SqliteConnection>.FromFactory(Make, ColumnNameMatching.CaseInsensitive);
         Assert.Equal("Ann", (string)insensitive.QueryFirst("SELECT Name FROM People WHERE Id = 1").name);
         Assert.ThrowsAny<Exception>(() => (string)sensitive.QueryFirst("SELECT Name FROM People WHERE Id = 1").name);
     }
@@ -113,7 +113,7 @@ public sealed class ConnectionFactoryTests : IDisposable
     public void F10_ASubclassConnectionKeepsItsOwnState()
     {
         var made = new List<RecordingSqliteConnection>();
-        var ctx = new DbContext<RecordingSqliteConnection>(() =>
+        var ctx = DbContext<RecordingSqliteConnection>.FromFactory(() =>
         {
             var connection = new RecordingSqliteConnection { ConnectionString = _db.ConnectionString };
             made.Add(connection);
@@ -127,14 +127,22 @@ public sealed class ConnectionFactoryTests : IDisposable
     }
 
     [Fact]
-    public void F11_PublicConstructorsAreTheStringAndTheFactory()
+    public void F11_TheStringConstructorStaysTheOnlyPublicOne()
     {
-        var shapes = typeof(DbContext<SqliteConnection>).GetConstructors(BindingFlags.Public | BindingFlags.Instance)
-            .Select(c => string.Join(", ", c.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name} = {p.DefaultValue}")))
-            .OrderBy(s => s, StringComparer.Ordinal);
-        Assert.Equal(
-            ["Func`1 connectionFactory = , ColumnNameMatching columnNames = CaseSensitive",
-             "String connectionString = , ColumnNameMatching columnNames = CaseSensitive"],
-            shapes);
+        var constructors = typeof(DbContext<SqliteConnection>).GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+        Assert.Equal([typeof(string), typeof(ColumnNameMatching)], Assert.Single(constructors).GetParameters().Select(p => p.ParameterType));
+        var fromFactory = typeof(DbContext<SqliteConnection>).GetMethod(nameof(DbContext<SqliteConnection>.FromFactory))!;
+        Assert.True(fromFactory.IsStatic);
+        Assert.Equal(typeof(DbContext<SqliteConnection>), fromFactory.ReturnType);
+        Assert.Equal(["connectionFactory", "columnNames"], fromFactory.GetParameters().Select(p => p.Name));
+        Assert.Equal(typeof(Func<SqliteConnection>), fromFactory.GetParameters()[0].ParameterType);
+        Assert.Equal(ColumnNameMatching.CaseSensitive, fromFactory.GetParameters()[1].DefaultValue);
+    }
+
+    [Fact]
+    public void F12_ALiteralNullStillMeansTheConnectionString()
+    {
+        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>(null!)).ParamName);
+        Assert.Equal("connectionString", Assert.Throws<ArgumentNullException>(() => new DbContext<SqliteConnection>(null!, ColumnNameMatching.CaseInsensitive)).ParamName);
     }
 }

@@ -21,14 +21,21 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
         using var connection = CreateConnection();
     }
 
-    /// <summary>Takes a factory that returns a new, closed connection each time a call or batch needs one.</summary>
+    /// <summary>Creates a context from a factory that returns a new, closed connection each time a call or batch needs one.</summary>
     /// <remarks>For connections a string cannot describe: one made by a provider's data source, one that carries a sign-in token, or a test's recording connection.
+    /// <para>A named method, not a second public constructor: a constructor taking a delegate would make <c>new DbContext&lt;T&gt;(null)</c> ambiguous and break callers that compile against 3.0.0.</para>
     /// <para>The factory is not called here, unlike the string constructor's parse: making a connection is the factory's own code and may have effects its owner counts. A factory that returns null or a connection that is not closed fails the call that asked for it, and that connection is left to its owner.</para></remarks>
-    public DbContext(Func<TConnection> connectionFactory, ColumnNameMatching columnNames = ColumnNameMatching.CaseSensitive)
+    public static DbContext<TConnection> FromFactory(Func<TConnection> connectionFactory, ColumnNameMatching columnNames = ColumnNameMatching.CaseSensitive)
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
-        _columnNames = ValidColumnNames(columnNames);
+        return new DbContext<TConnection>(connectionFactory, ValidColumnNames(columnNames));
+    }
+
+    /// <summary>Holds already-validated settings for <see cref="FromFactory"/>.</summary>
+    private DbContext(Func<TConnection> connectionFactory, ColumnNameMatching columnNames)
+    {
         _connectionFactory = connectionFactory;
+        _columnNames = columnNames;
     }
 
     /// <summary>Refuses a column-name rule outside the enum, for both constructors.</summary>

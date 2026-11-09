@@ -21,14 +21,14 @@ state: share one instance concurrently or register it as a singleton. A session 
 finish its work, readers and enumerations inside the callback. Do not dispose `session.Connection`.
 
 When a connection needs more than a string (a provider data source, a sign-in token set on each
-connection, a test connection that records what it ran), pass a factory instead. The context calls it
-once per call or batch, never in the constructor; it must return a new, closed connection, which the
+connection, a test connection that records what it ran), create the context with `FromFactory`. It calls
+the factory once per call or batch, never at creation; the factory must return a new, closed connection, which the
 context opens and disposes. Null or a connection that is not closed fails that call with
 `InvalidOperationException`, and the returned connection is left alone.
 
 ```csharp
 await using var source = NpgsqlDataSource.Create(connectionString);
-var pg = new DbContext<NpgsqlConnection>(source.CreateConnection);
+var pg = DbContext<NpgsqlConnection>.FromFactory(source.CreateConnection);
 ```
 
 ```csharp

@@ -28,7 +28,7 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
     public static DbContext<TConnection> FromFactory(Func<TConnection> connectionFactory, ColumnNameMatching columnNames = ColumnNameMatching.CaseSensitive)
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
-        return new DbContext<TConnection>(connectionFactory, ValidColumnNames(columnNames));
+        return new DbContext<TConnection>(() => NewAndClosed(connectionFactory), ValidColumnNames(columnNames));
     }
 
     /// <summary>Holds already-validated settings for <see cref="FromFactory"/>.</summary>
@@ -137,11 +137,15 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
     public TResult Batch<TResult>(Func<DbSession<TConnection>, Task<TResult>> func) => throw new NotSupportedException();
 
     /// <summary>Creates every connection in one place without exposing the secret-bearing string.</summary>
-    /// <remarks>Checks the factory's result before any caller's using statement owns it, so a shared open connection is refused, never disposed.</remarks>
-    private TConnection CreateConnection()
+    private TConnection CreateConnection() => _connectionFactory();
+
+    /// <summary>Calls a caller's factory and refuses a result the context cannot own.</summary>
+    /// <remarks>Wraps only <see cref="FromFactory"/>'s factory: the string constructor's connection is made here and is new and closed by construction, and 3.0.0 never read its State.
+    /// <para>The check runs before any caller's using statement owns the connection, so a shared open connection is refused, never disposed.</para></remarks>
+    private static TConnection NewAndClosed(Func<TConnection> connectionFactory)
     {
         const string rule = "It must return a new, closed connection for each call.";
-        var connection = _connectionFactory()
+        var connection = connectionFactory()
             ?? throw new InvalidOperationException($"The connection factory returned null. {rule}");
         return connection.State == ConnectionState.Closed
             ? connection

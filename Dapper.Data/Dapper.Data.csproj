@@ -9,8 +9,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>3.1.0</Version>
-    <PackageVersion>3.1.0</PackageVersion>
+    <Version>3.1.1</Version>
+    <PackageVersion>3.1.1</PackageVersion>
     <Copyright>Copyright Maxim Konstantinovski 2012</Copyright>
     <PackageTags>orm;sql;micro-orm;dapper</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -19,7 +19,9 @@
     <RepositoryType>git</RepositoryType>
     <Description>Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>* 3.1.0
+    <PackageReleaseNotes>* 3.1.1
+* Fix: when opening the connection fails in Batch or BatchAsync (and every one-shot DbContext call) and disposing it then also throws, the open failure is now the exception thrown; before, the disposal failure replaced it. No API change.
+* 3.1.0
 * Adds DbContext&lt;T&gt;.FromFactory(connectionFactory, columnNames): the factory returns a new, closed connection per call or batch (provider data sources, per-connection sign-in tokens, test connections). Additive: the string constructor and every 3.0.0 call compile and behave as before.
 * 3.0.0
 * Targets net10.0 only; moves all types to Dapper.Data.

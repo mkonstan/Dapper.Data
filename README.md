@@ -2,7 +2,7 @@
 
 Micro-orm implemented on Dapper, streamlines connection and transaction management while preserving flexibility and usability of Dapper.
 
-Version 3.1.0 targets **net10.0** and uses Dapper 2.1.89. All library types are in `Dapper.Data`.
+Version 3.1.1 targets **net10.0** and uses Dapper 2.1.89. All library types are in `Dapper.Data`.
 Install `Dapper.Data` and the provider your application uses, such as `Microsoft.Data.Sqlite` or
 `Microsoft.Data.SqlClient`.
 

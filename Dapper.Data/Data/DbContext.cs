@@ -53,15 +53,16 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
     }
 
     /// <summary>Returns a callback's value after closing its connection and session.</summary>
-    /// <remarks>The callback's original exception takes precedence even if provider cleanup also fails; ExceptionDispatchInfo preserves its stack through both cleanup scopes.</remarks>
+    /// <remarks>A failure to open, or the callback's exception, takes precedence even if provider cleanup also fails; ExceptionDispatchInfo preserves its stack through both cleanup scopes.</remarks>
     public TResult Batch<TResult>(Func<DbSession<TConnection>, TResult> func)
     {
         ArgumentNullException.ThrowIfNull(func);
-        ExceptionDispatchInfo? callbackFailure = null;
+        ExceptionDispatchInfo? primaryFailure = null;
         try
         {
             using var connection = CreateConnection();
-            connection.Open();
+            try { connection.Open(); }
+            catch (Exception error) { primaryFailure = ExceptionDispatchInfo.Capture(error); throw; }
             var session = new DbSession<TConnection>(connection, _columnNames);
             var completed = false;
             try
@@ -72,7 +73,7 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
             }
             catch (Exception error)
             {
-                callbackFailure = ExceptionDispatchInfo.Capture(error);
+                primaryFailure = ExceptionDispatchInfo.Capture(error);
                 throw;
             }
             finally
@@ -81,7 +82,7 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
                 else session.CloseAfterFailure();
             }
         }
-        finally { callbackFailure?.Throw(); }
+        finally { primaryFailure?.Throw(); }
     }
 
     /// <summary>Awaits a callback once on one open connection, then closes its session.</summary>
@@ -92,16 +93,17 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
     }
 
     /// <summary>Returns an awaited callback's value after asynchronously closing its resources.</summary>
-    /// <remarks>The callback's original exception survives failures during rollback or asynchronous connection disposal.</remarks>
+    /// <remarks>A failure to open, or the callback's exception, survives failures during rollback or asynchronous connection disposal.</remarks>
     public async Task<TResult> BatchAsync<TResult>(Func<DbSession<TConnection>, Task<TResult>> func, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(func);
         cancellationToken.ThrowIfCancellationRequested();
-        ExceptionDispatchInfo? callbackFailure = null;
+        ExceptionDispatchInfo? primaryFailure = null;
         try
         {
             await using var connection = CreateConnection();
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            try { await connection.OpenAsync(cancellationToken).ConfigureAwait(false); }
+            catch (Exception error) { primaryFailure = ExceptionDispatchInfo.Capture(error); throw; }
             var session = new DbSession<TConnection>(connection, _columnNames);
             var completed = false;
             try
@@ -112,7 +114,7 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
             }
             catch (Exception error)
             {
-                callbackFailure = ExceptionDispatchInfo.Capture(error);
+                primaryFailure = ExceptionDispatchInfo.Capture(error);
                 throw;
             }
             finally
@@ -121,7 +123,7 @@ public class DbContext<TConnection> where TConnection : DbConnection, new()
                 else await session.CloseAfterFailureAsync().ConfigureAwait(false);
             }
         }
-        finally { callbackFailure?.Throw(); }
+        finally { primaryFailure?.Throw(); }
     }
 
     /// <summary>Rejects asynchronous callbacks on the synchronous lifetime scope.</summary>

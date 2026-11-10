@@ -24,11 +24,14 @@ public sealed class OpenFailurePrecedenceTests
             if (OpenFailure is not null) throw OpenFailure;
             base.Open();
         }
-        public override Task OpenAsync(CancellationToken cancellationToken)
+        /// <remarks>A failure is thrown from this frame, so its stack names OpenAsync; success goes through
+        /// DbConnection.OpenAsync, which calls Open, which counts it once.</remarks>
+        public override async Task OpenAsync(CancellationToken cancellationToken)
         {
+            if (OpenFailure is null) { await base.OpenAsync(cancellationToken); return; }
             Opens++;
-            if (OpenFailure is not null) return Task.FromException(OpenFailure);
-            return base.OpenAsync(cancellationToken);
+            await Task.Yield();
+            throw OpenFailure;
         }
         protected override void Dispose(bool disposing)
         {
@@ -67,6 +70,7 @@ public sealed class OpenFailurePrecedenceTests
         var thrown = Assert.Throws<IOException>(() =>
             Context(open, new InvalidOperationException("cleanup failed")).Batch(_ => { entered = true; return 0; }));
         Assert.Same(open, thrown);
+        Assert.Contains("OpenFailureConnection.Open()", thrown.StackTrace);
         Assert.False(entered);
         Assert.Equal((1, 1), (Only().Opens, Only().Disposals));
     }
@@ -80,6 +84,7 @@ public sealed class OpenFailurePrecedenceTests
             Context(open, new InvalidOperationException("cleanup failed"))
                 .BatchAsync(_ => { entered = true; return Task.FromResult(0); }));
         Assert.Same(open, thrown);
+        Assert.Contains("OpenFailureConnection.OpenAsync(", thrown.StackTrace);
         Assert.False(entered);
         Assert.Equal((1, 1), (Only().Opens, Only().Disposals));
     }
@@ -124,5 +129,18 @@ public sealed class OpenFailurePrecedenceTests
         var asyncCleanup = new InvalidOperationException("async cleanup failed");
         Assert.Same(asyncCleanup, await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Context(null, asyncCleanup).BatchAsync(_ => Task.FromResult(0))));
+        Assert.All(_made, c => Assert.Equal((1, 1), (c.Opens, c.Disposals)));
+    }
+
+    [Fact]
+    public async Task O07_a_callback_failure_still_wins_over_cleanup_and_disposes_once()
+    {
+        var syncCallback = new ApplicationException("sync callback failed");
+        Assert.Same(syncCallback, Assert.Throws<ApplicationException>(() =>
+            Context(null, new InvalidOperationException("cleanup failed")).Batch(new Func<DbSession<OpenFailureConnection>, int>(_ => throw syncCallback))));
+        var asyncCallback = new ApplicationException("async callback failed");
+        Assert.Same(asyncCallback, await Assert.ThrowsAsync<ApplicationException>(() =>
+            Context(null, new InvalidOperationException("cleanup failed")).BatchAsync(new Func<DbSession<OpenFailureConnection>, Task<int>>(_ => throw asyncCallback))));
+        Assert.All(_made, c => Assert.Equal((1, 1), (c.Opens, c.Disposals)));
     }
 }

@@ -222,6 +222,7 @@ public sealed class UnbufferedCleanupTests
             c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
         }), "SELECT 1 AS a, 2 AS a"));
         Assert.Equal("RowReader: duplicate column 'a'; alias it to a unique name.", thrown.Message);
+        Assert.Contains("RowReader..ctor(", thrown.StackTrace);
         Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
@@ -338,5 +339,29 @@ public sealed class UnbufferedCleanupTests
         Assert.Same(commandCleanup, await Assert.ThrowsAsync<ApplicationException>(() =>
             Consume(async, Context(c => c.CommandDisposeFailure = commandCleanup), take: 1)));
         Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U10_rows_keep_column_order_values_and_types(bool async)
+    {
+        const string sql = "SELECT 3 AS c, 'x' AS a, NULL AS b UNION ALL SELECT 4, 'y', 2.5";
+        var rows = new List<IDictionary<string, object?>>();
+        var context = Context();
+        if (async)
+            await context.BatchAsync(async s =>
+            {
+                await foreach (var row in s.QueryUnbufferedAsync(sql)) rows.Add((IDictionary<string, object?>)row);
+            });
+        else
+            context.Batch(new Action<DbSession<FaultConnection>>(s =>
+            {
+                foreach (var row in s.QueryUnbuffered(sql)) rows.Add((IDictionary<string, object?>)row);
+            }));
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, row => Assert.Equal(["c", "a", "b"], row.Keys));
+        Assert.Equal(new object?[] { 3L, "x", null }, rows[0].Values);
+        Assert.Equal(new object?[] { 4L, "y", 2.5 }, rows[1].Values);
     }
 }

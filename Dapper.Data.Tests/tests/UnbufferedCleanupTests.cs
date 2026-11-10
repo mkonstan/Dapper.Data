@@ -7,8 +7,9 @@ using Xunit;
 
 namespace Dapper.Data.Tests;
 
-/// <summary>Pins 3.1.2: a streamed query disposes its reader and then its command exactly once, sync and async, and a
-/// failure while reading is never replaced by a failure while closing.</summary>
+/// <summary>Pins 3.1.2: a streamed query disposes its reader and then its command exactly once (asynchronously on the
+/// async path), and a failure while reading is never replaced by a failure while closing. Every case runs sync and
+/// async.</summary>
 /// <remarks>Before 3.1.2 the session relied on Dapper's wrapped reader: its DisposeAsync never disposed the command,
 /// its Dispose skipped the command when the reader's own disposal threw, and either disposal failure replaced a read
 /// failure already in flight.</remarks>
@@ -17,21 +18,28 @@ public sealed class UnbufferedCleanupTests
     private const string Rows = "SELECT 1 AS Id UNION ALL SELECT 2 UNION ALL SELECT 3";
     private readonly List<FaultConnection> _made = [];
 
-    /// <summary>A SQLite connection whose commands and readers count their disposals and can be made to fail.</summary>
+    /// <summary>A SQLite connection whose commands and readers record their disposals and can be made to fail.</summary>
     private sealed class FaultConnection : SqliteConnection
     {
         public int ReadFailAt { get; set; } = -1;
         public Exception? ReadFailure { get; set; }
+        public int ValueFailAt { get; set; } = -1;
+        public Exception? ValueFailure { get; set; }
         public Exception? ReaderDisposeFailure { get; set; }
         public Exception? CommandDisposeFailure { get; set; }
+        /// <summary>"reader" or "command", with " async" when disposed through DisposeAsync, in disposal order.</summary>
         public List<string> Disposed { get; } = [];
-        public int ReaderDisposals => Disposed.Count(d => d == "reader");
-        public int CommandDisposals => Disposed.Count(d => d == "command");
         public FaultConnection() { }
         protected override DbCommand CreateDbCommand() => new FaultCommand(base.CreateDbCommand(), this);
+
+        public void Record(string what, Exception? failure)
+        {
+            Disposed.Add(what);
+            if (failure is not null) throw failure;
+        }
     }
 
-    /// <summary>Forwards to the provider command; counts and optionally fails its disposal.</summary>
+    /// <summary>Forwards to the provider command; records and optionally fails its disposal.</summary>
     private sealed class FaultCommand(DbCommand inner, FaultConnection owner) : DbCommand
     {
         [AllowNull] public override string CommandText { get => inner.CommandText; set => inner.CommandText = value; }
@@ -56,12 +64,17 @@ public sealed class UnbufferedCleanupTests
             base.Dispose(disposing);
             if (!disposing) return;
             inner.Dispose();
-            owner.Disposed.Add("command");
-            if (owner.CommandDisposeFailure is { } failure) throw failure;
+            owner.Record("command", owner.CommandDisposeFailure);
+        }
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync();
+            GC.SuppressFinalize(this);
+            owner.Record("command async", owner.CommandDisposeFailure);
         }
     }
 
-    /// <summary>Forwards to the provider reader; can fail one read and its disposal, and counts disposals.</summary>
+    /// <summary>Forwards to the provider reader; can fail one read, one row's values and its disposal.</summary>
     private sealed class FaultReader(DbDataReader inner, FaultConnection owner) : DbDataReader
     {
         private int _reads;
@@ -91,7 +104,11 @@ public sealed class UnbufferedCleanupTests
         public override string GetName(int ordinal) => inner.GetName(ordinal);
         public override int GetOrdinal(string name) => inner.GetOrdinal(name);
         public override string GetString(int ordinal) => inner.GetString(ordinal);
-        public override object GetValue(int ordinal) => inner.GetValue(ordinal);
+        public override object GetValue(int ordinal)
+        {
+            if (_reads == owner.ValueFailAt) throw owner.ValueFailure!;
+            return inner.GetValue(ordinal);
+        }
         public override int GetValues(object[] values) => inner.GetValues(values);
         public override bool IsDBNull(int ordinal) => inner.IsDBNull(ordinal);
         public override bool NextResult() => inner.NextResult();
@@ -110,8 +127,13 @@ public sealed class UnbufferedCleanupTests
             base.Dispose(disposing);
             if (!disposing) return;
             inner.Dispose();
-            owner.Disposed.Add("reader");
-            if (owner.ReaderDisposeFailure is { } failure) throw failure;
+            owner.Record("reader", owner.ReaderDisposeFailure);
+        }
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync();
+            GC.SuppressFinalize(this);
+            owner.Record("reader async", owner.ReaderDisposeFailure);
         }
     }
 
@@ -126,116 +148,153 @@ public sealed class UnbufferedCleanupTests
 
     private FaultConnection Only() => Assert.Single(_made);
 
-    private static Task StreamAsync(DbContext<FaultConnection> context, string sql = Rows, int take = int.MaxValue) =>
-        context.BatchAsync(async s =>
-        {
-            var seen = 0;
-            await foreach (var _ in s.QueryUnbufferedAsync(sql))
-                if (++seen == take) break;
-        });
+    /// <summary>Reader then command, each once, through DisposeAsync on the async path and Dispose on the sync one.</summary>
+    private static string[] ReaderThenCommand(bool async) =>
+        async ? ["reader async", "command async"] : ["reader", "command"];
 
-    private static void Stream(DbContext<FaultConnection> context, string sql = Rows, int take = int.MaxValue) =>
-        context.Batch(new Action<DbSession<FaultConnection>>(s =>
+    /// <summary>Streams up to <paramref name="take"/> rows inside one batch; a sync failure comes back as a faulted task.</summary>
+    private static Task Consume(bool async, DbContext<FaultConnection> context, string sql = Rows, int take = int.MaxValue)
+    {
+        if (async)
+            return context.BatchAsync(async s =>
+            {
+                var seen = 0;
+                await foreach (var _ in s.QueryUnbufferedAsync(sql))
+                    if (++seen == take) break;
+            });
+        try
         {
-            var seen = 0;
-            foreach (var _ in s.QueryUnbuffered(sql))
-                if (++seen == take) break;
-        }));
+            context.Batch(new Action<DbSession<FaultConnection>>(s =>
+            {
+                var seen = 0;
+                foreach (var _ in s.QueryUnbuffered(sql))
+                    if (++seen == take) break;
+            }));
+            return Task.CompletedTask;
+        }
+        catch (Exception error) { return Task.FromException(error); }
+    }
 
-    [Fact]
-    public async Task U01_async_read_failure_survives_reader_disposal_failure()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U01_read_failure_survives_reader_disposal_failure(bool async)
     {
         var read = new IOException("read failed");
-        var thrown = await Assert.ThrowsAsync<IOException>(() => StreamAsync(Context(c =>
+        var thrown = await Assert.ThrowsAsync<IOException>(() => Consume(async, Context(c =>
         {
             c.ReadFailAt = 2;
             c.ReadFailure = read;
             c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed");
         })));
         Assert.Same(read, thrown);
-        Assert.Contains("FaultReader.ReadAsync(", thrown.StackTrace);
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
+        Assert.Contains(async ? "FaultReader.ReadAsync(" : "FaultReader.Read(", thrown.StackTrace);
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
     }
 
-    [Fact]
-    public async Task U02_async_duplicate_columns_survive_reader_disposal_failure()
-    {
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => StreamAsync(
-            Context(c => c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed")), "SELECT 1 AS a, 2 AS a"));
-        Assert.StartsWith("RowReader: duplicate column 'a'", thrown.Message);
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
-    }
-
-    [Fact]
-    public async Task U03_async_read_failure_survives_command_disposal_failure()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U02_read_failure_survives_command_disposal_failure(bool async)
     {
         var read = new IOException("read failed");
-        var thrown = await Assert.ThrowsAsync<IOException>(() => StreamAsync(Context(c =>
+        var thrown = await Assert.ThrowsAsync<IOException>(() => Consume(async, Context(c =>
         {
             c.ReadFailAt = 1;
             c.ReadFailure = read;
             c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
         })));
         Assert.Same(read, thrown);
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
     }
 
     [Theory]
-    [InlineData(int.MaxValue)]
-    [InlineData(1)]
-    public async Task U04_async_full_or_early_stop_disposes_reader_then_command_once(int take)
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U03_duplicate_columns_keep_their_exact_message_over_disposal_failures(bool async)
     {
-        await StreamAsync(Context(), take: take);
-        Assert.Equal(["reader", "command"], Only().Disposed);
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => Consume(async, Context(c =>
+        {
+            c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed");
+            c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
+        }), "SELECT 1 AS a, 2 AS a"));
+        Assert.Equal("RowReader: duplicate column 'a'; alias it to a unique name.", thrown.Message);
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
     }
 
-    [Fact]
-    public async Task U05_async_after_success_the_first_cleanup_failure_surfaces_and_both_are_attempted()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U04_row_conversion_failure_survives_reader_disposal_failure(bool async)
+    {
+        var conversion = new InvalidCastException("value failed");
+        var thrown = await Assert.ThrowsAsync<InvalidCastException>(() => Consume(async, Context(c =>
+        {
+            c.ValueFailAt = 2;
+            c.ValueFailure = conversion;
+            c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed");
+        })));
+        Assert.Same(conversion, thrown);
+        Assert.Contains("FaultReader.GetValue(", thrown.StackTrace);
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U05_closed_session_failure_survives_reader_disposal_failure(bool async)
+    {
+        var context = Context(c => c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed"));
+        if (async)
+        {
+            IAsyncEnumerator<dynamic>? rows = null;
+            await context.BatchAsync(async s =>
+            {
+                rows = s.QueryUnbufferedAsync(Rows).GetAsyncEnumerator();
+                Assert.True(await rows.MoveNextAsync());
+            });
+            await Assert.ThrowsAsync<ObjectDisposedException>(async () => await rows!.MoveNextAsync());
+        }
+        else
+        {
+            IEnumerator<dynamic>? rows = null;
+            context.Batch(new Action<DbSession<FaultConnection>>(s =>
+            {
+                rows = s.QueryUnbuffered(Rows).GetEnumerator();
+                Assert.True(rows.MoveNext());
+            }));
+            Assert.Throws<ObjectDisposedException>(() => rows!.MoveNext());
+        }
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+    }
+
+    [Theory]
+    [InlineData(true, int.MaxValue)]
+    [InlineData(true, 1)]
+    [InlineData(false, int.MaxValue)]
+    [InlineData(false, 1)]
+    public async Task U06_full_or_early_stop_disposes_reader_then_command_once(bool async, int take)
+    {
+        await Consume(async, Context(), take: take);
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U07_after_success_the_first_cleanup_failure_surfaces_and_both_are_attempted(bool async)
     {
         var readerCleanup = new ApplicationException("reader cleanup failed");
-        Assert.Same(readerCleanup, await Assert.ThrowsAsync<ApplicationException>(() => StreamAsync(Context(c =>
+        Assert.Same(readerCleanup, await Assert.ThrowsAsync<ApplicationException>(() => Consume(async, Context(c =>
         {
             c.ReaderDisposeFailure = readerCleanup;
             c.CommandDisposeFailure = new InvalidOperationException("command cleanup failed");
         }))));
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
         _made.Clear();
         var commandCleanup = new ApplicationException("command cleanup failed");
         Assert.Same(commandCleanup, await Assert.ThrowsAsync<ApplicationException>(() =>
-            StreamAsync(Context(c => c.CommandDisposeFailure = commandCleanup))));
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
-    }
-
-    [Fact]
-    public void U06_sync_read_failure_survives_reader_disposal_failure()
-    {
-        var read = new IOException("read failed");
-        var thrown = Assert.Throws<IOException>(() => Stream(Context(c =>
-        {
-            c.ReadFailAt = 2;
-            c.ReadFailure = read;
-            c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed");
-        })));
-        Assert.Same(read, thrown);
-        Assert.Contains("FaultReader.Read(", thrown.StackTrace);
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
-    }
-
-    [Theory]
-    [InlineData(int.MaxValue)]
-    [InlineData(1)]
-    public void U07_sync_full_or_early_stop_disposes_reader_then_command_once(int take)
-    {
-        Stream(Context(), take: take);
-        Assert.Equal(["reader", "command"], Only().Disposed);
-    }
-
-    [Fact]
-    public void U08_sync_reader_disposal_failure_after_success_surfaces_and_the_command_is_still_disposed()
-    {
-        var readerCleanup = new ApplicationException("reader cleanup failed");
-        Assert.Same(readerCleanup, Assert.Throws<ApplicationException>(() =>
-            Stream(Context(c => c.ReaderDisposeFailure = readerCleanup))));
-        Assert.Equal((1, 1), (Only().ReaderDisposals, Only().CommandDisposals));
+            Consume(async, Context(c => c.CommandDisposeFailure = commandCleanup))));
+        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
     }
 }

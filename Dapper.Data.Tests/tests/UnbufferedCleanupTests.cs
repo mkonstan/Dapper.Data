@@ -27,14 +27,16 @@ public sealed class UnbufferedCleanupTests
         public Exception? ValueFailure { get; set; }
         public Exception? ReaderDisposeFailure { get; set; }
         public Exception? CommandDisposeFailure { get; set; }
+        /// <summary>The token each ReadAsync call received.</summary>
+        public List<CancellationToken> ReadTokens { get; } = [];
         /// <summary>"reader" or "command", with " async" when disposed through DisposeAsync, in disposal order.</summary>
-        public List<string> Disposed { get; } = [];
+        public List<string> DisposalLog { get; } = [];
         public FaultConnection() { }
         protected override DbCommand CreateDbCommand() => new FaultCommand(base.CreateDbCommand(), this);
 
         public void Record(string what, Exception? failure)
         {
-            Disposed.Add(what);
+            DisposalLog.Add(what);
             if (failure is not null) throw failure;
         }
     }
@@ -119,6 +121,7 @@ public sealed class UnbufferedCleanupTests
         }
         public override Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
+            owner.ReadTokens.Add(cancellationToken);
             if (++_reads == owner.ReadFailAt) throw owner.ReadFailure!;
             return inner.ReadAsync(cancellationToken);
         }
@@ -189,7 +192,7 @@ public sealed class UnbufferedCleanupTests
         })));
         Assert.Same(read, thrown);
         Assert.Contains(async ? "FaultReader.ReadAsync(" : "FaultReader.Read(", thrown.StackTrace);
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -205,7 +208,7 @@ public sealed class UnbufferedCleanupTests
             c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
         })));
         Assert.Same(read, thrown);
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -219,7 +222,7 @@ public sealed class UnbufferedCleanupTests
             c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
         }), "SELECT 1 AS a, 2 AS a"));
         Assert.Equal("RowReader: duplicate column 'a'; alias it to a unique name.", thrown.Message);
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -236,7 +239,7 @@ public sealed class UnbufferedCleanupTests
         })));
         Assert.Same(conversion, thrown);
         Assert.Contains("FaultReader.GetValue(", thrown.StackTrace);
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -265,7 +268,7 @@ public sealed class UnbufferedCleanupTests
             }));
             Assert.Throws<ObjectDisposedException>(() => rows!.MoveNext());
         }
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -276,7 +279,7 @@ public sealed class UnbufferedCleanupTests
     public async Task U06_full_or_early_stop_disposes_reader_then_command_once(bool async, int take)
     {
         await Consume(async, Context(), take: take);
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 
     [Theory]
@@ -290,11 +293,50 @@ public sealed class UnbufferedCleanupTests
             c.ReaderDisposeFailure = readerCleanup;
             c.CommandDisposeFailure = new InvalidOperationException("command cleanup failed");
         }))));
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
         _made.Clear();
         var commandCleanup = new ApplicationException("command cleanup failed");
         Assert.Same(commandCleanup, await Assert.ThrowsAsync<ApplicationException>(() =>
             Consume(async, Context(c => c.CommandDisposeFailure = commandCleanup))));
-        Assert.Equal(ReaderThenCommand(async), Only().Disposed);
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
+    }
+
+    [Fact]
+    public async Task U08_async_cancellation_mid_stream_reaches_the_read_and_survives_disposal_failures()
+    {
+        using var cancel = new CancellationTokenSource();
+        var context = Context(c =>
+        {
+            c.ReaderDisposeFailure = new ApplicationException("reader cleanup failed");
+            c.CommandDisposeFailure = new ApplicationException("command cleanup failed");
+        });
+        var seen = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.BatchAsync(async s =>
+        {
+            await foreach (var _ in s.QueryUnbufferedAsync(Rows, cancellationToken: cancel.Token))
+                if (++seen == 1) cancel.Cancel();
+        }));
+        Assert.Equal(1, seen);
+        Assert.Equal([cancel.Token, cancel.Token], Only().ReadTokens);
+        Assert.Equal(ReaderThenCommand(true), Only().DisposalLog);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task U09_after_an_early_stop_the_first_cleanup_failure_surfaces_and_both_are_attempted(bool async)
+    {
+        var readerCleanup = new ApplicationException("reader cleanup failed");
+        Assert.Same(readerCleanup, await Assert.ThrowsAsync<ApplicationException>(() => Consume(async, Context(c =>
+        {
+            c.ReaderDisposeFailure = readerCleanup;
+            c.CommandDisposeFailure = new InvalidOperationException("command cleanup failed");
+        }), take: 1)));
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
+        _made.Clear();
+        var commandCleanup = new ApplicationException("command cleanup failed");
+        Assert.Same(commandCleanup, await Assert.ThrowsAsync<ApplicationException>(() =>
+            Consume(async, Context(c => c.CommandDisposeFailure = commandCleanup), take: 1)));
+        Assert.Equal(ReaderThenCommand(async), Only().DisposalLog);
     }
 }

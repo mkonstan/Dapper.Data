@@ -139,6 +139,11 @@ and `ReadSingleOrDefault` follow the corresponding query rules. All have async f
 the last set throws `InvalidOperationException`. Using a closed session or reading an escaped grid
 or stream throws `ObjectDisposedException`.
 
+When an unbuffered stream ends (fully read, stopped early, or failed), it disposes its reader and
+then its command, each once; `QueryUnbufferedAsync` disposes both asynchronously. A failure while
+reading rows (including cancellation and a duplicate column name) is the exception you get, even if
+closing the reader or command also fails; otherwise the first closing failure is thrown.
+
 For typed queries, multi-mapping or other Dapper features, use the open typed connection and its
 transaction directly within a batch:
 

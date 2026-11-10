@@ -2,6 +2,7 @@ using Dapper;
 using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace Dapper.Data;
 
@@ -240,6 +241,8 @@ public sealed class DbSession<TConnection> where TConnection : DbConnection, new
     }
 
     /// <summary>Streams rows lazily; the command starts on the first MoveNext.</summary>
+    /// <remarks>Disposes the reader, then its command, each once; a failure while reading survives a failure while
+    /// closing them (3.1.2).</remarks>
     public IEnumerable<dynamic> QueryUnbuffered(string sql, object? param = null, CommandType? commandType = null, int? commandTimeout = null)
     {
         EnsureOpen();
@@ -249,29 +252,85 @@ public sealed class DbSession<TConnection> where TConnection : DbConnection, new
         IEnumerable<dynamic> Stream()
         {
             var command = Command(sql, param, commandType, commandTimeout);
-            using var reader = (DbDataReader)_connection.ExecuteReader(command, CommandBehavior.SequentialAccess);
-            var rows = new RowReader(reader, _comparer);
-            while (true)
+            var (reader, readerCommand) = Unwrap((DbDataReader)_connection.ExecuteReader(command, CommandBehavior.SequentialAccess));
+            var failed = false;
+            try
             {
-                EnsureOpen();
-                if (!reader.Read()) yield break;
-                yield return rows.ReadRow(reader);
+                RowReader rows;
+                try { rows = new RowReader(reader, _comparer); }
+                catch { failed = true; throw; }
+                while (true)
+                {
+                    DbRow row;
+                    try
+                    {
+                        EnsureOpen();
+                        if (!reader.Read()) yield break;
+                        row = rows.ReadRow(reader);
+                    }
+                    catch { failed = true; throw; }
+                    yield return row;
+                }
             }
+            finally { DisposeStream(reader, readerCommand, failed); }
         }
     }
 
     /// <summary>Streams rows asynchronously inside the callback's connection lifetime.</summary>
+    /// <remarks>Disposes the reader, then its command, each once and asynchronously; a failure while reading survives a
+    /// failure while closing them (3.1.2).</remarks>
     public async IAsyncEnumerable<dynamic> QueryUnbufferedAsync(string sql, object? param = null, CommandType? commandType = null, int? commandTimeout = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var command = Command(sql, param, commandType, commandTimeout, cancellationToken);
-        await using var reader = await _connection.ExecuteReaderAsync(command, CommandBehavior.SequentialAccess).ConfigureAwait(false);
-        var rows = new RowReader(reader, _comparer);
-        while (true)
+        var (reader, readerCommand) = Unwrap(await _connection.ExecuteReaderAsync(command, CommandBehavior.SequentialAccess).ConfigureAwait(false));
+        var failed = false;
+        try
         {
-            EnsureOpen();
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) yield break;
-            yield return rows.ReadRow(reader);
+            RowReader rows;
+            try { rows = new RowReader(reader, _comparer); }
+            catch { failed = true; throw; }
+            while (true)
+            {
+                DbRow row;
+                try
+                {
+                    EnsureOpen();
+                    if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) yield break;
+                    row = rows.ReadRow(reader);
+                }
+                catch { failed = true; throw; }
+                yield return row;
+            }
         }
+        finally { await DisposeStreamAsync(reader, readerCommand, failed).ConfigureAwait(false); }
+    }
+
+    /// <summary>Takes the provider reader and command out of Dapper's wrapper, so the session closes both itself.</summary>
+    /// <remarks>Dapper's wrapper closes its command with the reader, except in DisposeAsync, and except when the
+    /// reader's own disposal throws.</remarks>
+    private static (DbDataReader Reader, DbCommand? Command) Unwrap(DbDataReader reader) =>
+        reader is IWrappedDataReader { Reader: DbDataReader inner, Command: DbCommand command } ? (inner, command) : (reader, null);
+
+    /// <summary>Disposes the reader, then the command; the first failure wins unless a read failure is in flight.</summary>
+    private static void DisposeStream(DbDataReader reader, DbCommand? command, bool failed)
+    {
+        ExceptionDispatchInfo? first = null;
+        try { reader.Dispose(); }
+        catch (Exception error) { first = ExceptionDispatchInfo.Capture(error); }
+        try { command?.Dispose(); }
+        catch (Exception error) { first ??= ExceptionDispatchInfo.Capture(error); }
+        if (!failed) first?.Throw();
+    }
+
+    /// <summary>Asynchronously disposes the reader, then the command, with the same precedence as <see cref="DisposeStream"/>.</summary>
+    private static async ValueTask DisposeStreamAsync(DbDataReader reader, DbCommand? command, bool failed)
+    {
+        ExceptionDispatchInfo? first = null;
+        try { await reader.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception error) { first = ExceptionDispatchInfo.Capture(error); }
+        try { if (command is not null) await command.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception error) { first ??= ExceptionDispatchInfo.Capture(error); }
+        if (!failed) first?.Throw();
     }
 
     /// <summary>Opens a reader for multiple result sets, to be consumed inside this session.</summary>

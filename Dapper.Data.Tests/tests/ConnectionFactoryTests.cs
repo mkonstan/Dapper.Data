@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Reflection;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -198,6 +199,96 @@ public sealed class ConnectionFactoryTests : IDisposable
             get { StateReads++; throw new ApplicationException("state getter failure"); }
         }
         public override void Open() { }
+        public override void Close() { }
+        public override void ChangeDatabase(string databaseName) { }
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) Disposals++;
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public async Task F15_OverlappingCallsOnOneContextEachOwnTheirConnection()
+    {
+        const int calls = 8;
+        var made = new System.Collections.Concurrent.ConcurrentBag<CountingConnection>();
+        var used = new System.Collections.Concurrent.ConcurrentBag<CountingConnection>();
+        var ctx = DbContext<CountingConnection>.FromFactory(() =>
+        {
+            var connection = new CountingConnection { ConnectionString = _db.ConnectionString };
+            made.Add(connection);
+            return connection;
+        });
+        var entered = 0;
+        var allIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await Task.WhenAll(Enumerable.Range(0, calls).Select(_ => Task.Run(() => ctx.BatchAsync(async s =>
+        {
+            used.Add(s.Connection);
+            if (Interlocked.Increment(ref entered) == calls) allIn.SetResult();
+            await allIn.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Equal(2L, await s.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM People"));
+        }))));
+        Assert.Equal(calls, made.Count);
+        Assert.Equal(calls, made.Distinct().Count());
+        Assert.Equal(made.OrderBy(RuntimeHelpers.GetHashCode), used.OrderBy(RuntimeHelpers.GetHashCode));
+        Assert.All(made, c => Assert.Equal(1, c.Disposals));
+    }
+
+    [Fact]
+    public async Task F16_TheCallbackFailureSurvivesACleanupFailure()
+    {
+        var ctx = DbContext<FailurePrecedenceTests.CleanupFailureConnection>.FromFactory(
+            () => new FailurePrecedenceTests.CleanupFailureConnection { ConnectionString = _db.ConnectionString });
+        var boom = new ApplicationException("original callback error");
+        Assert.Same(boom, Assert.Throws<ApplicationException>(() => ctx.Batch(new Action<DbSession<FailurePrecedenceTests.CleanupFailureConnection>>(s =>
+        {
+            s.BeginTransaction();
+            s.Execute("INSERT INTO People(Name) VALUES('C')");
+            s.Connection.FailCleanup = true;
+            throw boom;
+        }))));
+        Assert.Same(boom, await Assert.ThrowsAsync<ApplicationException>(() => ctx.BatchAsync(async s =>
+        {
+            await s.BeginTransactionAsync();
+            await s.ExecuteAsync("INSERT INTO People(Name) VALUES('C')");
+            s.Connection.FailCleanup = true;
+            throw boom;
+        })));
+        Assert.Equal(2L, new DbContext<SqliteConnection>(_db.ConnectionString).ExecuteScalar<long>("SELECT COUNT(*) FROM People"));
+    }
+
+    [Theory]
+    [InlineData(ConnectionState.Broken)]
+    [InlineData(ConnectionState.Connecting)]
+    [InlineData(ConnectionState.Executing)]
+    [InlineData(ConnectionState.Fetching)]
+    public async Task F17_EveryStateButClosedIsRefusedUntouched(ConnectionState state)
+    {
+        var connection = new FixedStateConnection { FixedState = state };
+        var ctx = DbContext<FixedStateConnection>.FromFactory(() => connection);
+        var expected = $"The connection factory returned a connection that is not closed ({state}). It must return a new, closed connection for each call.";
+        Assert.Equal(expected, Assert.Throws<InvalidOperationException>(() => ctx.Query("SELECT 1")).Message);
+        Assert.Equal(expected, (await Assert.ThrowsAsync<InvalidOperationException>(() => ctx.QueryAsync("SELECT 1"))).Message);
+        Assert.Equal(0, connection.Opens);
+        Assert.Equal(0, connection.Disposals);
+    }
+
+    /// <summary>A connection that reports whatever state a test sets and counts opens and disposals.</summary>
+    public sealed class FixedStateConnection : DbConnection
+    {
+        public ConnectionState FixedState { get; set; }
+        public int Opens { get; private set; }
+        public int Disposals { get; private set; }
+        [AllowNull] public override string ConnectionString { get; set; } = "";
+        public override string Database => "";
+        public override string DataSource => "";
+        public override string ServerVersion => "";
+        public override ConnectionState State => FixedState;
+        public override void Open() => Opens++;
+        public override Task OpenAsync(CancellationToken cancellationToken) { Opens++; return Task.CompletedTask; }
         public override void Close() { }
         public override void ChangeDatabase(string databaseName) { }
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
